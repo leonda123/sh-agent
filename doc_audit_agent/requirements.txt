@@ -1,0 +1,9 @@
+crewai
+langchain_openai
+fastapi
+uvicorn
+python-multipart
+pdf2docx
+markitdown
+python-dotenv
+litellm
