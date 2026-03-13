@@ -1,42 +1,14 @@
-# 文档审计智能体 (Document Audit Agent)
+# SH Agent Platform (智能体文档审计平台)
 
-这是一个基于 CrewAI 和 FastAPI 的智能文档审计系统。它旨在自动审核 PDF 文档中的特定检查项，目前主要支持图表清单与正文内容的一致性检查。
+这是一个基于 CrewAI 和 FastAPI 构建的模块化多智能体平台。它支持动态加载和运行不同的智能体插件，目前内置了**文档图表一致性审计**智能体。
 
 ## 功能特性
 
-*   **PDF 文档转换**: 使用 `pdf2docx` 和 `markitdown` 将 PDF 转换为 Markdown 格式，尽可能保留原始结构。
-*   **多智能体协同**:
-    *   **文档处理专家**: 负责文档格式转换。
-    *   **内容分析师**: 负责从文档中提取图/表目录以及正文中的图/表引用。
-    *   **审计员**: 负责比对目录与正文内容，发现不一致之处。
-    *   **审查员**: 负责复核审计结果并生成最终报告。
-*   **Web 界面**: 提供简单的 Web 界面用于上传文件和查看实时审计日志。
-*   **REST API**: 提供标准的 API 接口，方便集成。
-
-## 项目结构
-
-```text
-doc_audit_agent/
-├── api/
-│   ├── app.py             # FastAPI 应用入口
-│   └── routes.py          # API 路由定义
-├── core/
-│   ├── agents/
-│   │   └── figure_table_checker/  # 图表检查智能体群
-│   │       ├── agents.py          # 智能体定义
-│   │       ├── tasks.py           # 任务定义
-│   │       ├── crew.py            # Crew 编排
-│   │       └── prompts/           # 持久化的中文提示词 (.md)
-│   └── tools/
-│       ├── document_tools.py      # CrewAI 工具封装
-│       └── file_converter.py      # 文件转换逻辑 (PDF->Docx->MD)
-├── frontend/
-│   └── index.html         # 中文 Web 界面
-├── uploads/               # 上传文件临时存储
-├── outputs/               # 转换后的 Markdown 文件存储
-├── main.py                # 启动脚本
-└── requirements.txt       # 项目依赖
-```
+*   **模块化架构**: 核心平台与智能体插件分离，易于扩展新的智能体。
+*   **统一 API**: 提供标准的 REST API 接口，用于列出、运行和停止智能体任务。
+*   **实时反馈**: 基于 Server-Sent Events (SSE) 技术，实时推送智能体执行步骤和日志。
+*   **PDF 文档处理**: 内置 `pdf2docx` 和 `markitdown` 工具链，将 PDF 转换为高质量 Markdown。
+*   **Web 界面**: 提供直观的 Web 界面，支持选择智能体、上传文件、查看实时进度和下载报告。
 
 ## 快速开始
 
@@ -47,38 +19,122 @@ doc_audit_agent/
 ### 2. 安装依赖
 
 ```bash
-pip install -r doc_audit_agent/requirements.txt
+pip install -r requirements.txt
 ```
 
 ### 3. 配置环境变量
 
-在 `doc_audit_agent/.env` 文件中配置阿里云模型接口信息（已默认配置，如需更改请编辑该文件）：
+在项目根目录创建或修改 `.env` 文件，配置大模型接口信息：
 
 ```env
 ALIYUN_API_KEY=your_api_key
 ALIYUN_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
 MODEL_NAME=qwen-plus
+OPENAI_API_KEY=NA  # 如果使用兼容接口，此项可设为任意值
 ```
 
 ### 4. 启动服务
 
+在项目根目录下运行：
+
 ```bash
-python doc_audit_agent/main.py
+python main.py
 ```
+
+服务将启动在 `http://0.0.0.0:5000`。
 
 ### 5. 使用系统
 
 *   **Web 界面**: 访问 [http://localhost:5000/ui](http://localhost:5000/ui)
 *   **API 文档**: 访问 [http://localhost:5000/docs](http://localhost:5000/docs)
 
-## 扩展指南
+## API 接口文档
 
-如果需要添加新的检查项（例如“错别字检查”），可以按照以下步骤操作：
+平台提供以下核心 API 接口：
 
-1.  在 `core/agents/` 下创建一个新目录，例如 `spell_checker`。
-2.  定义新的 `agents.py` 和 `tasks.py`。
-3.  创建新的 `crew.py` 进行编排。
-4.  在 `api/routes.py` 中添加新的 API 端点来调用新的 Crew。
+### 1. 获取智能体列表
+
+*   **URL**: `/api/agents`
+*   **Method**: `GET`
+*   **描述**: 获取当前平台所有可用的智能体。
+*   **Response**:
+    ```json
+    [
+      {
+        "id": "doc_audit",
+        "name": "文档图表一致性审计",
+        "description": "自动检查文档中的图表目录与正文内容是否一致。"
+      }
+    ]
+    ```
+
+### 2. 运行智能体
+
+*   **URL**: `/api/run/{agent_id}`
+*   **Method**: `POST`
+*   **Content-Type**: `multipart/form-data`
+*   **Parameters**:
+    *   `agent_id` (path): 智能体 ID (例如 `doc_audit`)
+    *   `file` (form-data): 要处理的 PDF 文件
+*   **Response**:
+    ```json
+    {
+      "session_id": "uuid-string",
+      "message": "Agent started",
+      "file_path": "uploads/uuid_filename.pdf"
+    }
+    ```
+
+### 3. 监听任务进度 (SSE)
+
+*   **URL**: `/api/stream/{session_id}`
+*   **Method**: `GET`
+*   **Content-Type**: `text/event-stream`
+*   **描述**: 通过 SSE 连接实时接收任务日志和状态更新。
+*   **Events**:
+    *   `start`: 任务开始
+    *   `step`: 智能体思考/行动步骤
+    *   `task_completed`: 阶段性任务完成（用于前端进度条）
+    *   `result`: 最终结果
+    *   `error`: 错误信息
+    *   `stop`: 任务被用户停止
+
+### 4. 停止任务
+
+*   **URL**: `/api/stop/{session_id}`
+*   **Method**: `POST`
+*   **Response**:
+    ```json
+    {
+      "message": "Stop signal sent to session {session_id}"
+    }
+    ```
+
+## 扩展开发指南
+
+要添加新的智能体，请遵循以下步骤：
+
+1.  在 `agents/` 目录下创建一个新目录（例如 `agents/my_agent`）。
+2.  在该目录下创建 `agent.py`，并实现 `BaseAgent` 接口：
+
+    ```python
+    from app.core.base_agent import BaseAgent
+
+    class MyAgent(BaseAgent):
+        @property
+        def name(self) -> str:
+            return "my_agent_id"
+        
+        @property
+        def display_name(self) -> str:
+            return "我的自定义智能体"
+            
+        def run(self, inputs, queue, stop_event):
+            # 实现智能体逻辑
+            pass
+    ```
+
+3.  在 `app/core/agent_manager.py` 中注册该智能体。
 
 ## 许可证
 
