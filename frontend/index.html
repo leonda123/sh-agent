@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>智能文档审核系统 - 图表清单检查</title>
     <!-- Use reliable CDN for marked.js -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://unpkg.com/marked/marked.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -63,6 +63,85 @@
         .upload-btn:hover {
             background-color: #2980b9;
         }
+        .secondary-btn {
+            background-color: #95a5a6;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+            margin-left: 10px;
+        }
+        .secondary-btn:hover {
+            background-color: #7f8c8d;
+        }
+        
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 10% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 800px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .history-table th, .history-table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        .history-table th {
+            background-color: #f2f2f2;
+            color: #333;
+        }
+        .history-table tr:hover {
+            background-color: #f5f5f5;
+            cursor: pointer;
+        }
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-completed { background-color: #d4edda; color: #155724; }
+        .status-failed { background-color: #f8d7da; color: #721c24; }
+        .status-running { background-color: #cce5ff; color: #004085; }
+        .status-stopped { background-color: #e2e3e5; color: #383d41; }
+
         /* --- New Progress Steps UI --- */
         .progress-container {
             margin: 20px 0;
@@ -465,8 +544,22 @@
 </head>
 <body>
     <div class="container">
-        <h1>智能文档审核平台</h1>
-        
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h1 style="margin: 0; flex-grow: 1;">智能文档审核系统 - 图表清单检查</h1>
+            <button id="view-history-btn" class="secondary-btn">查看历史记录</button>
+        </div>
+
+        <!-- History Modal -->
+        <div id="history-modal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2>任务历史记录</h2>
+                <div id="history-list-container">
+                    <p>正在加载...</p>
+                </div>
+            </div>
+        </div>
+
         <div class="agent-selector">
             <select id="agent-select">
                 <option value="" disabled selected>正在加载智能体...</option>
@@ -594,9 +687,37 @@
 Response:
 {
   "session_id": "uuid-string",
-  "message": "Agent started",
-  "file_path": "uploads/..."
+  "message": "Agent started successfully",
+  "file_path": "uploads/...",
+  "status": "running",
+  "created_at": 1710000000.0
 }</div>
+                </div>
+                
+                <div class="api-endpoint">
+                    <div>
+                        <span class="api-method method-get">GET</span>
+                        <span class="api-url">/api/history</span>
+                    </div>
+                    <div class="api-desc">获取历史任务会话列表。</div>
+                    <div class="api-block">Response:
+[
+  {
+    "session_id": "...",
+    "agent_id": "...",
+    "file_name": "...",
+    "start_time": ...,
+    "status": "completed"
+  }
+]</div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div>
+                        <span class="api-method method-get">GET</span>
+                        <span class="api-url">/api/history/{session_id}</span>
+                    </div>
+                    <div class="api-desc">获取指定会话的完整日志和结果。</div>
                 </div>
 
                 <div class="api-endpoint">
@@ -661,6 +782,118 @@ data: ...</div>
         let currentSessionId = null;
 
         const agentSelect = document.getElementById('agent-select');
+
+        // History Modal Logic
+        const modal = document.getElementById("history-modal");
+        const btn = document.getElementById("view-history-btn");
+        const span = document.getElementsByClassName("close")[0];
+        const historyListContainer = document.getElementById("history-list-container");
+
+        btn.onclick = function() {
+            modal.style.display = "block";
+            loadHistory();
+        }
+
+        span.onclick = function() {
+            modal.style.display = "none";
+        }
+
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                modal.style.display = "none";
+            }
+        }
+
+        async function loadHistory() {
+            try {
+                historyListContainer.innerHTML = '<p>正在加载...</p>';
+                const response = await fetch('/api/history');
+                const sessions = await response.json();
+                
+                if (sessions.length === 0) {
+                    historyListContainer.innerHTML = '<p>暂无历史记录。</p>';
+                    return;
+                }
+
+                let html = '<table class="history-table"><thead><tr><th>时间</th><th>文件名</th><th>状态</th><th>耗时</th></tr></thead><tbody>';
+                
+                sessions.forEach(session => {
+                    const startTime = new Date(session.start_time * 1000).toLocaleString();
+                    const duration = session.end_time ? ((session.end_time - session.start_time).toFixed(1) + 's') : '-';
+                    const statusClass = `status-${session.status || 'unknown'}`;
+                    
+                    html += `<tr onclick="loadSessionDetail('${session.session_id}')">
+                        <td>${startTime}</td>
+                        <td>${session.file_name}</td>
+                        <td><span class="status-badge ${statusClass}">${session.status}</span></td>
+                        <td>${duration}</td>
+                    </tr>`;
+                });
+                
+                html += '</tbody></table>';
+                historyListContainer.innerHTML = html;
+            } catch (error) {
+                console.error('Failed to load history:', error);
+                historyListContainer.innerHTML = '<p style="color:red">加载失败: ' + error.message + '</p>';
+            }
+        }
+
+        async function loadSessionDetail(sessionId) {
+            try {
+                modal.style.display = "none"; // Close modal
+                
+                // Clear current view
+                logsDiv.innerHTML = '';
+                llmContentDiv.innerHTML = '正在加载历史记录...';
+                resultContentDiv.innerHTML = '';
+                fullLogs = [];
+                resetProgress();
+                
+                // Show logs container
+                document.querySelector('.results-container').style.display = 'flex'; // Ensure visible
+                document.getElementById('progressContainer').style.display = 'block';
+
+                const response = await fetch(`/api/history/${sessionId}`);
+                const session = await response.json();
+                
+                if (!session) {
+                    alert('未找到会话记录');
+                    return;
+                }
+                
+                // Set metadata
+                fileName.textContent = session.file_name + " (历史记录)";
+                currentSessionId = sessionId;
+                
+                // Replay events
+                if (session.events && session.events.length > 0) {
+                    // Sort events by timestamp if needed, but they should be in order
+                    session.events.forEach(item => {
+                        // item structure: { timestamp: ..., event: { type: ..., ... } }
+                        const event = item.event;
+                        processEvent(event);
+                    });
+                }
+
+                
+                // If session is completed, ensure result is shown
+                if (session.status === 'completed' && session.result) {
+                   displayResult(session.result);
+                }
+                
+                // Update total duration
+                if (session.start_time && session.end_time) {
+                     const total = session.end_time - session.start_time;
+                     document.getElementById('totalDuration').textContent = formatDuration(total);
+                }
+
+            } catch (error) {
+                console.error('Failed to load session details:', error);
+                alert('加载详情失败: ' + error.message);
+            }
+        }
+        
+
 
         // Load agents on startup
         async function loadAgents() {
@@ -893,84 +1126,7 @@ data: ...</div>
                         }
                         
                         const msg = JSON.parse(event.data);
-                        fullLogs.push(msg); // Store raw log
-
-                        // Handle progress updates
-                        if (msg.type === 'step') {
-                            const agentRole = msg.agent;
-                            let phaseId = msg.phase_id;
-                            
-                            if (!phaseId || phaseId === 'unknown_phase') {
-                                if (agentRole) {
-                                    const roleToPhase = {
-                                        '文档处理专家': 'phase_1',
-                                        '内容分析师': 'phase_2',
-                                        '交叉验证员': 'phase_3',
-                                        '审计员': 'phase_4',
-                                        '审查员': 'phase_5'
-                                    };
-                                    phaseId = roleToPhase[agentRole];
-                                }
-                            }
-                            if ((!phaseId || phaseId === 'unknown_phase') && msg.content) {
-                                const roleToPhase = {
-                                    '文档处理专家': 'phase_1',
-                                    '内容分析师': 'phase_2',
-                                    '交叉验证员': 'phase_3',
-                                    '审计员': 'phase_4',
-                                    '审查员': 'phase_5'
-                                };
-                                for (const roleName in roleToPhase) {
-                                    if (msg.content.includes(roleName)) {
-                                        phaseId = roleToPhase[roleName];
-                                        break;
-                                    }
-                                }
-                            }
-
-                            if (phaseId && phaseId !== 'unknown_phase') {
-                                updatePhase(phaseId);
-                            }
-                        } else if (msg.type === 'task_completed') {
-                             const phaseId = msg.data.phase_id;
-                             if (phaseId && phaseId !== 'unknown_phase') {
-                                 phaseTaskCompletions[phaseId] = (phaseTaskCompletions[phaseId] || 0) + 1;
-                                 const requiredCount = phaseTaskRequirements[phaseId] || 1;
-                                 if (phaseTaskCompletions[phaseId] >= requiredCount) {
-                                     completePhase(phaseId);
-                                     const phaseIdx = phaseOrder.indexOf(phaseId);
-                                     if (phaseIdx !== -1 && phaseIdx < phaseOrder.length - 1) {
-                                         updatePhase(phaseOrder[phaseIdx + 1]);
-                                     }
-                                 }
-                                 addLog('info', 'System', `Task Completed: ${msg.data.description}`);
-                             } 
-                        } 
-                        
-                        // Handle result/stop/error inside handleMessage mostly, 
-                        // but we need to intercept for progress bar
-                        if (msg.type === 'result') {
-                             completePhase('phase_5');
-                             if (timerInterval) clearInterval(timerInterval);
-                             stopBtn.style.display = 'none';
-                             auditBtn.disabled = false;
-                             // Don't close here, let handleMessage do it and render result
-                        } else if (msg.type === 'stop') {
-                             stopProgress();
-                             stopBtn.style.display = 'none';
-                             auditBtn.disabled = false;
-                             addLog('warning', 'System', 'Process stopped by user.');
-                             eventSource.close();
-                             if (timerInterval) clearInterval(timerInterval);
-                             return;
-                        } else if (msg.type === 'error') {
-                             stopProgress();
-                             stopBtn.style.display = 'none';
-                             auditBtn.disabled = false;
-                             if (timerInterval) clearInterval(timerInterval);
-                        }
-
-                        handleMessage(msg, eventSource);
+                        processEvent(msg, eventSource);
                     } catch (e) {
                         console.error("解析消息失败:", e);
                     }
@@ -1000,23 +1156,127 @@ data: ...</div>
             }
         });
 
-        function handleMessage(msg, eventSource) {
+        function processEvent(msg, eventSource = null) {
+            // Store raw log if not already in (for history replay we might not want to push again if we are just displaying? 
+            // But loadSessionDetail clears fullLogs, so we should push.)
+            // Check if it's a replay (no eventSource) or live.
+            // Actually simpler to just push.
+            // For live, fullLogs is cleared on start.
+            // For history, fullLogs is cleared on load.
+            // But processEvent might be called twice if we are not careful? 
+            // No, loadSessionDetail calls handleHistoryEvent which calls processEvent.
+            // Wait, I used `fullLogs.push(msg)` in onmessage before. 
+            // Let's just push here.
+            // But wait, fullLogs is used for "Download Logs". 
+            // If I replay history, I want fullLogs to be populated.
+            // But if I replay history, I iterate session.events.
+            // So pushing to fullLogs is correct.
+            // EXCEPT: fullLogs.push(msg) is already in the old onmessage.
+            // I should make sure I don't double push if I call this from somewhere else?
+            // loadSessionDetail clears fullLogs.
+            // eventSource.onmessage calls processEvent.
+            
+            // Avoid duplicates if msg is the same object reference? No, it's parsed JSON.
+            // Let's just push.
+            // But wait, in loadSessionDetail I am iterating session.events.
+            // If I push to fullLogs, it will be correct.
+            
+            // However, verify if fullLogs is already populated?
+            // No, fullLogs is cleared.
+            
+            // One issue: msg from history has {timestamp, event: {type...}}.
+            // msg from live stream has {type...}.
+            // loadSessionDetail extracts item.event and passes to handleHistoryEvent -> processEvent.
+            // So msg passed to processEvent is {type...}. Correct.
+            
+            fullLogs.push(msg);
+
+            // --- Progress Bar Logic ---
+            if (msg.type === 'step') {
+                const agentRole = msg.agent;
+                let phaseId = msg.phase_id;
+                
+                if (!phaseId || phaseId === 'unknown_phase') {
+                    if (agentRole) {
+                        const roleToPhase = {
+                            '文档处理专家': 'phase_1',
+                            '内容分析师': 'phase_2',
+                            '交叉验证员': 'phase_3',
+                            '审计员': 'phase_4',
+                            '审查员': 'phase_5'
+                        };
+                        phaseId = roleToPhase[agentRole];
+                    }
+                }
+                if ((!phaseId || phaseId === 'unknown_phase') && msg.content) {
+                    const roleToPhase = {
+                        '文档处理专家': 'phase_1',
+                        '内容分析师': 'phase_2',
+                        '交叉验证员': 'phase_3',
+                        '审计员': 'phase_4',
+                        '审查员': 'phase_5'
+                    };
+                    for (const roleName in roleToPhase) {
+                        if (msg.content.includes(roleName)) {
+                            phaseId = roleToPhase[roleName];
+                            break;
+                        }
+                    }
+                }
+
+                if (phaseId && phaseId !== 'unknown_phase') {
+                    updatePhase(phaseId);
+                }
+            } else if (msg.type === 'task_completed') {
+                 const phaseId = msg.data.phase_id;
+                 if (phaseId && phaseId !== 'unknown_phase') {
+                     phaseTaskCompletions[phaseId] = (phaseTaskCompletions[phaseId] || 0) + 1;
+                     const requiredCount = phaseTaskRequirements[phaseId] || 1;
+                     if (phaseTaskCompletions[phaseId] >= requiredCount) {
+                         completePhase(phaseId);
+                         const phaseIdx = phaseOrder.indexOf(phaseId);
+                         if (phaseIdx !== -1 && phaseIdx < phaseOrder.length - 1) {
+                             updatePhase(phaseOrder[phaseIdx + 1]);
+                         }
+                     }
+                     addLog('info', 'System', `Task Completed: ${msg.data.description}`);
+                 } 
+            } 
+
+            // --- Control Logic ---
+            if (msg.type === 'result') {
+                 completePhase('phase_5');
+                 if (timerInterval) clearInterval(timerInterval);
+                 stopBtn.style.display = 'none';
+                 auditBtn.disabled = false;
+                 // Don't close eventSource here, let it close after rendering result?
+                 // Actually, handleMessage logic (below) closes it.
+            } else if (msg.type === 'stop') {
+                 stopProgress();
+                 stopBtn.style.display = 'none';
+                 auditBtn.disabled = false;
+                 addLog('warning', 'System', 'Process stopped by user.');
+                 if (eventSource) eventSource.close();
+                 if (timerInterval) clearInterval(timerInterval);
+                 return;
+            } else if (msg.type === 'error') {
+                 stopProgress();
+                 stopBtn.style.display = 'none';
+                 auditBtn.disabled = false;
+                 if (timerInterval) clearInterval(timerInterval);
+            }
+
+            // --- Rendering Logic (Merged from handleMessage) ---
             if (msg.type === 'step') {
                 // Agent step update
                 let title = "Agent";
-                
-                // If agent name is available, use it in the title
                 if (msg.agent) {
                     title = `${msg.agent} - 思考/行动`;
                 }
-                
                 let content = msg.content;
-                
-                // Try to make title more specific
                 if (content.includes("Entering new CrewAgentExecutor chain")) {
                      title = msg.agent ? `${msg.agent} - 开始执行任务` : "开始执行任务";
                 }
-                
                 if (msg.thought) {
                     content = `<strong>思考:</strong> ${msg.thought}`;
                     if (msg.tool) {
@@ -1057,7 +1317,6 @@ data: ...</div>
                      `;
                 }
                 
-                // Agent name from data or fallback
                 const agentName = data.agent || "System";
                 
                 card.innerHTML = `
@@ -1079,7 +1338,6 @@ data: ...</div>
                     </div>
                 `;
                 
-                // Prepend to show latest first
                 if (llmContentDiv.innerHTML.includes('任务开始，等待交互...')) {
                     llmContentDiv.innerHTML = '';
                 }
@@ -1095,7 +1353,6 @@ data: ...</div>
                 }
             }
             else if (msg.type === 'task') {
-                // Task completion
                 let title = "任务完成";
                 let content = "";
                 if (msg.description) content += `<strong>任务描述:</strong> ${msg.description}<br><br>`;
@@ -1103,20 +1360,16 @@ data: ...</div>
                 addLog('task', title, content);
             }
             else if (msg.type === 'result') {
-                // Process complete
                 loadingDiv.style.display = 'none';
                 auditBtn.style.display = 'inline-block';
                 auditBtn.disabled = false;
                 stopBtn.style.display = 'none';
                 currentSessionId = null;
                 
-                // Render Markdown
                 finalResultMarkdown = msg.data;
-                // Strip common leading whitespace to ensure tables are rendered correctly
                 const cleanMarkdown = finalResultMarkdown.replace(/^[\s\t]+|[\s\t]+$/gm, (match) => {
                     return match.includes('\n') ? match : ''; 
                 });
-                // Better approach: remove common indentation
                 const lines = finalResultMarkdown.split('\n');
                 const minIndent = lines.reduce((min, line) => {
                     if (!line.trim()) return min;
@@ -1129,7 +1382,6 @@ data: ...</div>
                 }).join('\n');
 
                 try {
-                    // Use marked.parse if available, otherwise fallback to marked
                     const parseMarkdown = typeof marked.parse === 'function' ? marked.parse : marked;
                     resultContentDiv.innerHTML = parseMarkdown(unindentedMarkdown);
                 } catch (e) {
@@ -1140,10 +1392,9 @@ data: ...</div>
                 addLog('task', '流程结束', '<strong>审核流程全部完成</strong>');
                 downloadLogsBtn.style.display = 'inline-block';
                 downloadResultBtn.style.display = 'inline-block';
-                eventSource.close();
+                if (eventSource) eventSource.close();
             }
             else if (msg.type === 'error') {
-                // Error occurred
                 loadingDiv.style.display = 'none';
                 auditBtn.style.display = 'inline-block';
                 auditBtn.disabled = false;
@@ -1153,7 +1404,7 @@ data: ...</div>
                 resultContentDiv.textContent = `错误: ${msg.message}`;
                 addLog('error', '发生错误', msg.message);
                 downloadLogsBtn.style.display = 'inline-block';
-                eventSource.close();
+                if (eventSource) eventSource.close();
             }
         }
 
