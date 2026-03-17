@@ -2,7 +2,7 @@ import os
 from crewai import Agent
 from app.tools.document_tools import ProcessDocumentTool, ReadFileTool
 
-class FigureTableAgents:
+class FigureTableRoles:
     def __init__(self):
         self.process_tool = ProcessDocumentTool()
         self.read_tool = ReadFileTool()

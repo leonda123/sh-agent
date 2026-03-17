@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi import APIRouter, File, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
 import shutil
 import os
@@ -7,194 +7,41 @@ import logging
 import json
 import asyncio
 import time
-from queue import Queue, Empty
-from threading import Thread, Event
-from app.core.agent_manager import AgentManager
-import litellm
-from contextvars import ContextVar
+from queue import Empty
 
-# Configure logging
+from app.core.runner import AgentRunner
+
+# 配置日志记录器
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-from app.core.history import HistoryManager
-
 router = APIRouter()
-history_manager = HistoryManager()
-
-# Store active sessions and their event queues
-# Key: session_id, Value: Queue
-session_queues = {}
-# Key: session_id, Value: Event (for stopping execution)
-session_events = {}
-
-# Context var to hold the usage dict for the current thread/context
-session_usage = ContextVar('session_usage', default=None)
-# Context var to hold the queue for the current thread/context
-session_queue = ContextVar('session_queue', default=None)
-
-def litellm_callback(kwargs, completion_response, start_time, end_time):
-    """Callback for LiteLLM to track token usage and capture LLM interaction."""
-    try:
-        # 1. Track Usage
-        usage = session_usage.get()
-        if usage is not None and 'usage' in completion_response:
-            u = completion_response['usage']
-            usage['total_tokens'] += u.get('total_tokens', 0)
-            usage['prompt_tokens'] += u.get('prompt_tokens', 0)
-            usage['completion_tokens'] += u.get('completion_tokens', 0)
-            
-        # 2. Capture LLM Interaction (Input/Output)
-        queue = session_queue.get()
-        if queue is not None:
-            # Extract Input (Messages)
-            input_messages = kwargs.get('messages', [])
-            
-            # Extract Output (Content)
-            output_content = ""
-            if 'choices' in completion_response and len(completion_response['choices']) > 0:
-                message = completion_response['choices'][0].get('message', {})
-                output_content = message.get('content', "")
-            
-            # Extract Model
-            model = kwargs.get('model', 'unknown')
-            
-            # Extract Agent Name from System Prompt
-            agent_name = "Unknown Agent"
-            if len(input_messages) > 0 and input_messages[0].get('role') == 'system':
-                content = input_messages[0].get('content', '')
-                # Simple heuristic: CrewAI prompts usually start with "You are [Role]."
-                # or contain "Your role is [Role]"
-                import re
-                match = re.search(r"You are (.*?)(?:\.|,|\n)", content)
-                if match:
-                    agent_name = match.group(1).strip()
-                else:
-                    # Fallback: check for "Your role is"
-                    match = re.search(r"Your role is (.*?)(?:\.|,|\n)", content)
-                    if match:
-                        agent_name = match.group(1).strip()
-            
-            # Push to queue
-            queue.put({
-                "type": "llm_io",
-                "data": {
-                    "input": input_messages,
-                    "output": output_content,
-                    "model": model,
-                    "agent": agent_name
-                }
-            })
-            
-    except Exception:
-        # Ignore context errors (e.g. called from outside our managed context)
-        pass
-
-# Register callback
-if litellm_callback not in litellm.success_callback:
-    litellm.success_callback.append(litellm_callback)
-
-class HistoryQueue:
-    """Wrapper around Queue to persist events to history."""
-    def __init__(self, queue: Queue, session_id: str, history_manager: HistoryManager):
-        self.queue = queue
-        self.session_id = session_id
-        self.history_manager = history_manager
-
-    def put(self, item, block=True, timeout=None):
-        self.queue.put(item, block, timeout)
-        # Persist to history
-        try:
-            self.history_manager.append_event(self.session_id, item)
-        except Exception as e:
-            logger.error(f"Failed to persist event to history: {e}")
-
-    def get(self, block=True, timeout=None):
-        return self.queue.get(block, timeout)
-
-    def get_nowait(self):
-        return self.queue.get_nowait()
-    
-    def empty(self):
-        return self.queue.empty()
-
-def run_agent_in_background(agent_id: str, session_id: str, inputs: dict, queue: Queue, stop_event: Event):
-    """
-    Runs the Agent process in a background thread and pushes events to the queue.
-    """
-    # Wrap queue to persist events
-    history_queue = HistoryQueue(queue, session_id, history_manager)
-
-    # Initialize usage stats for this session
-    usage_stats = {'total_tokens': 0, 'prompt_tokens': 0, 'completion_tokens': 0}
-    
-    # Set context vars for this thread
-    token_usage = session_usage.set(usage_stats)
-    token_queue = session_queue.set(history_queue) # Use wrapped queue
-    
-    try:
-        # 1. Start Event
-        history_queue.put({"type": "start", "message": f"Agent {agent_id} started."})
-        
-        # 2. Get Agent
-        manager = AgentManager()
-        agent = manager.get_agent(agent_id)
-        if not agent:
-             history_queue.put({"type": "error", "message": f"Agent {agent_id} not found."})
-             return
-
-        # 3. Execute Agent
-        result = agent.run(inputs, history_queue, stop_event)
-        
-        # 4. Result Event
-        if not stop_event.is_set():
-            # If result is CrewOutput, get raw string
-            if hasattr(result, 'raw'):
-                 final_output = result.raw
-            else:
-                 final_output = str(result)
-                 
-            history_queue.put({
-                "type": "result", 
-                "data": final_output,
-                "usage": usage_stats
-            })
-            
-    except Exception as e:
-        logger.error(f"Error in background task: {e}", exc_info=True)
-        history_queue.put({"type": "error", "message": str(e)})
-    finally:
-        # Clean up context vars
-        session_usage.reset(token_usage)
-        session_queue.reset(token_queue)
-        pass
 
 @router.get("/agents", summary="获取智能体列表", description="获取系统中所有可用的智能体及其描述。")
 async def list_agents():
-    """List all available agents."""
-    manager = AgentManager()
-    return manager.list_agents()
+    """列出所有可用的智能体。"""
+    return AgentRunner.list_agents()
 
 @router.post("/run/{agent_id}", summary="运行智能体", description="上传PDF文件并启动指定的智能体任务。返回会话ID用于追踪进度。", response_description="包含会话ID、状态消息和文件路径的JSON对象。")
 async def run_agent(agent_id: str, file: UploadFile = File(...)):
     """
-    Upload a file and start the specified agent.
-    Returns a session_id to subscribe to SSE updates.
+    上传文件并启动指定的智能体。
+    返回一个 session_id 用于订阅 SSE 更新。
     """
-    # Validate file type
+    # 验证文件类型
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     
-    # Generate Session ID
+    # 生成会话 ID
     session_id = str(uuid.uuid4())
     
-    # Create Upload Directory
+    # 创建上传目录
     upload_dir = os.path.join("uploads")
     if not os.path.exists(upload_dir):
         os.makedirs(upload_dir)
         
-    # Save File
-    # Prefix filename with session_id to avoid collisions
+    # 保存文件
+    # 文件名前缀加上 session_id 以避免冲突
     original_filename = os.path.basename(file.filename)
     sanitized_filename = original_filename.replace(" ", "_")
     safe_filename = f"{session_id}_{sanitized_filename}"
@@ -203,21 +50,14 @@ async def run_agent(agent_id: str, file: UploadFile = File(...)):
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    # Create Session in History
-    history_manager.create_session(session_id, agent_id, original_filename)
-        
-    # Create Queue and Event
-    queue = Queue()
-    stop_event = Event()
-    session_queues[session_id] = queue
-    session_events[session_id] = stop_event
-    
-    # Start Background Task
-    thread = Thread(
-        target=run_agent_in_background,
-        args=(agent_id, session_id, {"file_path": os.path.abspath(file_path)}, queue, stop_event)
+    # 通过 AgentRunner 启动智能体
+    # 这将处理后台线程、历史记录和 LLM 回调上下文设置
+    AgentRunner.start_agent(
+        agent_id=agent_id, 
+        inputs={"file_path": os.path.abspath(file_path)}, 
+        session_id=session_id, 
+        original_filename=original_filename
     )
-    thread.start()
     
     return {
         "session_id": session_id, 
@@ -230,72 +70,59 @@ async def run_agent(agent_id: str, file: UploadFile = File(...)):
 @router.post("/stop/{session_id}", summary="停止任务", description="发送信号停止指定会话的正在运行的任务。")
 async def stop_session(session_id: str):
     """
-    Stop a running session.
+    停止正在运行的会话。
     """
-    if session_id in session_events:
-        session_events[session_id].set()
-        
-        if session_id in session_queues:
-            # We use the raw queue here, but we should probably use a HistoryQueue wrapper if we want to persist the stop event from here too.
-            # But the background thread will handle the stop signal and log "stop" event usually? 
-            # Actually, the background thread checks stop_event. 
-            # But let's push a stop message to the queue so the frontend gets it immediately.
-            # For persistence, we can call history_manager directly.
-            
-            msg = {"type": "stop", "message": "Session stopped by user."}
-            session_queues[session_id].put(msg)
-            history_manager.append_event(session_id, msg)
-            
+    if AgentRunner.stop_session(session_id):
         return {"message": "Stop signal sent"}
     else:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(status_code=404, detail="Session not found or not running")
 
 @router.get("/stream/{session_id}", summary="监听任务进度 (SSE)", description="通过 Server-Sent Events (SSE) 实时获取任务的执行日志和结果。")
 async def stream_audit(session_id: str):
     """
-    Streams updates for the given session ID using Server-Sent Events (SSE).
+    使用 Server-Sent Events (SSE) 流式传输指定会话 ID 的更新。
     """
-    if session_id not in session_queues:
-        # If session not found in active queues, check history?
-        # If it's a past session, we can't stream it via this endpoint (it's for live updates).
-        # User should use /history/{session_id} for past logs.
+    queue = AgentRunner.get_queue(session_id)
+    
+    if not queue:
+        # 如果在活动队列中找不到会话，检查历史记录？
+        # 如果是过去的会话，我们不能通过此端点流式传输（这是用于实时更新的）。
+        # 用户应使用 /history/{session_id} 获取过去的日志。
         raise HTTPException(status_code=404, detail="Session not found or expired")
     
-    queue = session_queues[session_id]
-    
     async def event_generator():
-        # Yield initial connection message
+        # 发送初始连接消息
         yield f"data: {json.dumps({'type': 'ping'})}\n\n"
         
         last_activity = time.time()
         
         while True:
             try:
-                # Check for new data with non-blocking get
+                # 使用非阻塞获取检查新数据
                 try:
-                    # Use get_nowait to avoid blocking the event loop
+                    # 使用 get_nowait 避免阻塞事件循环
                     data = queue.get_nowait()
                     
-                    if data is None: # Signal for end of stream
+                    if data is None: # 结束流的信号
                         break
                     
-                    # Reset activity timer on new data
+                    # 收到新数据时重置活动计时器
                     last_activity = time.time()
                     
-                    # Format as SSE
+                    # 格式化为 SSE
                     yield f"data: {json.dumps(data)}\n\n"
                     
-                    # Check if this is a terminal event
+                    # 检查是否为终止事件
                     if isinstance(data, dict) and data.get("type") in ["result", "error", "stop"]:
-                        # We still continue to yield until None is received, 
-                        # but usually backend sends None right after.
+                        # 我们仍然继续 yield 直到收到 None，
+                        # 但通常后端会在之后立即发送 None。
                         pass
                         
                 except Empty:
-                    # No data available, yield control to event loop
+                    # 没有可用数据，让出控制权给事件循环
                     await asyncio.sleep(0.1)
                     
-                    # Send keep-alive every 15 seconds
+                    # 每 15 秒发送一次保持连接信号
                     if time.time() - last_activity > 15:
                         yield ": keep-alive\n\n"
                         last_activity = time.time()
@@ -308,19 +135,19 @@ async def stream_audit(session_id: str):
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
                 break
         
-        # Cleanup is handled by the background task, not here
+        # 清理由后台任务处理，不在这里处理
             
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @router.get("/history", summary="获取历史记录", description="获取所有历史任务会话的列表（按时间倒序）。")
 async def list_history():
-    """List all historical sessions."""
-    return history_manager.list_sessions()
+    """列出所有历史会话。"""
+    return AgentRunner.get_history_manager().list_sessions()
 
 @router.get("/history/{session_id}", summary="获取会话详情", description="获取指定会话的详细信息，包括完整的日志记录。")
 async def get_history_session(session_id: str):
-    """Get details and logs for a specific session."""
-    session = history_manager.get_session(session_id)
+    """获取特定会话的详细信息和日志。"""
+    session = AgentRunner.get_history_manager().get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return session

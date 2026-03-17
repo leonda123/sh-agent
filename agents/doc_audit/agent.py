@@ -1,7 +1,8 @@
 from crewai import Crew, Process, LLM
-from agents.doc_audit.agents import FigureTableAgents
+from agents.doc_audit.roles import FigureTableRoles
 from agents.doc_audit.tasks import FigureTableTasks
 from app.core.base_agent import BaseAgent
+from app.core.llm import LLMFactory
 import os
 from typing import Dict, Any
 from queue import Queue
@@ -29,26 +30,18 @@ class DocAuditAgent(BaseAgent):
             raise ValueError("File path is required for DocAuditAgent")
 
         # Initialize Crew components
-        agents = FigureTableAgents()
+        roles = FigureTableRoles()
         tasks = FigureTableTasks()
         
         # Configure LLM
-        api_key = os.getenv("ALIYUN_API_KEY")
-        base_url = os.getenv("ALIYUN_API_BASE")
-        model_name = os.getenv("MODEL_NAME", "qwen3.5-flash")
+        # 使用工厂模式创建 LLM，支持 task/agent 级别的模型调度
+        llm = LLMFactory.get_aliyun_llm()
+
+        # 示例：如果某个特定任务需要使用 Ollama 的本地模型
+        # ollama_llm = LLMFactory.get_ollama_llm(model_name="llama3")
         
-        if not model_name.startswith("openai/"):
-            model_name = f"openai/{model_name}"
-
-        if "OPENAI_API_KEY" not in os.environ:
-             os.environ["OPENAI_API_KEY"] = "NA"
-
-        llm = LLM(
-            model=model_name,
-            base_url=base_url,
-            api_key=api_key,
-            timeout=600
-        )
+        # 示例：如果想给特定 agent 分配不同的 LLM，可以在创建时传入不同的 llm 实例
+        # analyzer_b = agents.content_analyzer_agent(ollama_llm, step_callback)
 
         # Callbacks (adapted from original routes.py logic)
         def step_callback(step_output):
@@ -144,22 +137,14 @@ class DocAuditAgent(BaseAgent):
             except Exception as e:
                 print(f"Error in task callback: {e}")
 
-        # Create Agents
-        processor = agents.document_processor_agent(llm, step_callback)
-        analyzer_a = agents.content_analyzer_agent(llm, step_callback)
-        analyzer_b = agents.content_analyzer_agent(llm, step_callback)
-        verifier = agents.verification_agent(llm, step_callback)
-        auditor = agents.auditor_agent(llm, step_callback)
-        reviewer = agents.reviewer_agent(llm, step_callback)
+        # Create Agents 通过llm来指定模型
+        processor = roles.document_processor_agent(llm, step_callback)
+        analyzer_a = roles.content_analyzer_agent(llm, step_callback)
+        analyzer_b = roles.content_analyzer_agent(llm, step_callback)
+        verifier = roles.verification_agent(llm, step_callback)
+        auditor = roles.auditor_agent(llm, step_callback)
+        reviewer = roles.reviewer_agent(llm, step_callback)
         
-        # Assign LLM
-        processor.llm = llm
-        analyzer_a.llm = llm
-        analyzer_b.llm = llm
-        verifier.llm = llm
-        auditor.llm = llm
-        reviewer.llm = llm
-
         # Create Tasks
         task1 = tasks.process_document_task(processor, pdf_path)
         task2_a = tasks.analyze_content_task(analyzer_a, task1)

@@ -112,13 +112,22 @@ python main.py
 
 ## 扩展开发指南
 
-要添加新的智能体，请遵循以下步骤：
+平台支持**自动发现**机制。要添加新的智能体，请遵循以下步骤：
 
 1.  在 `agents/` 目录下创建一个新目录（例如 `agents/my_agent`）。
-2.  在该目录下创建 `agent.py`，并实现 `BaseAgent` 接口：
+2.  推荐的目录结构：
+    ```text
+    agents/my_agent/
+    ├── agent.py      # 实现 BaseAgent 接口 (核心逻辑)
+    ├── roles.py      # 定义角色 (Agents)
+    ├── tasks.py      # 定义任务 (Tasks)
+    └── prompts/      # 存放提示词模板 (*.md)
+    ```
+3.  在 `agent.py` 中实现 `BaseAgent` 接口，并使用 `LLMFactory` 管理模型：
 
     ```python
     from app.core.base_agent import BaseAgent
+    from app.core.llm import LLMFactory
 
     class MyAgent(BaseAgent):
         @property
@@ -130,11 +139,13 @@ python main.py
             return "我的自定义智能体"
             
         def run(self, inputs, queue, stop_event):
-            # 实现智能体逻辑
+            # 1. 获取模型
+            llm = LLMFactory.get_aliyun_llm()
+            # 2. 实现智能体逻辑
             pass
     ```
 
-3.  在 `app/core/agent_manager.py` 中注册该智能体。
+4.  **自动注册**：系统启动时会自动扫描并加载 `agents/` 下的所有合法智能体，无需手动注册。
 
 ## 许可证
 

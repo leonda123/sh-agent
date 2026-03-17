@@ -7,7 +7,7 @@ from app.api.routes import router
 import os
 import uvicorn
 
-app = FastAPI(title="SH Agent Platform", version="1.0.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="适航智能体平台", version="1.0.0", docs_url=None, redoc_url=None)
 
 app.add_middleware(
     CORSMiddleware,
