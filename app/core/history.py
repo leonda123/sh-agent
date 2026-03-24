@@ -43,18 +43,29 @@ class HistoryManager:
         """根据会话 ID 获取对应的文件路径。"""
         return os.path.join(self.storage_dir, f"{session_id}.json")
 
-    def create_session(self, session_id: str, agent_id: str, file_name: str) -> Dict[str, Any]:
+    def create_session(self, session_id: str, agent_id: str, files: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         创建一个新的会话记录。
         :param session_id: 会话 ID
         :param agent_id: 智能体 ID
-        :param file_name: 原始文件名
+        :param files: 上传文件元数据列表
         :return: 创建的会话数据字典
         """
+        file_names = [item.get("name") for item in files if item.get("name")]
+        file_count = len(file_names)
+        display_file_name = "unknown"
+        if file_count == 1:
+            display_file_name = file_names[0]
+        elif file_count > 1:
+            display_file_name = f"{file_names[0]} 等 {file_count} 个文件"
+
         session_data = {
             "session_id": session_id,
             "agent_id": agent_id,
-            "file_name": file_name,
+            "file_name": display_file_name,
+            "file_names": file_names,
+            "file_count": file_count,
+            "files": files,
             "start_time": time.time(),
             "end_time": None,
             "status": "running", # running, completed, failed, stopped
@@ -124,6 +135,8 @@ class HistoryManager:
                                 "session_id": data.get("session_id"),
                                 "agent_id": data.get("agent_id"),
                                 "file_name": data.get("file_name"),
+                                "file_names": data.get("file_names", []),
+                                "file_count": data.get("file_count", 1),
                                 "start_time": data.get("start_time"),
                                 "end_time": data.get("end_time"),
                                 "status": data.get("status")
@@ -156,6 +169,9 @@ class HistoryManager:
                             "session_id": session_id,
                             "agent_id": "unknown",
                             "file_name": "unknown",
+                            "file_names": ["unknown"],
+                            "file_count": 1,
+                            "files": [],
                             "start_time": time.time(),
                             "end_time": None,
                             "status": "running",

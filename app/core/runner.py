@@ -175,12 +175,12 @@ class AgentRunner:
     """
     
     @staticmethod
-    def start_agent(agent_id: str, inputs: dict, session_id: str, original_filename: str):
+    def start_agent(agent_id: str, inputs: dict, session_id: str, files: list[dict]):
         """
         在后台线程中启动一个智能体。
         """
         # 在历史记录中创建会话
-        history_manager.create_session(session_id, agent_id, original_filename)
+        history_manager.create_session(session_id, agent_id, files)
         
         # 创建队列和停止事件
         queue = Queue()

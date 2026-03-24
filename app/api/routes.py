@@ -1,4 +1,6 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException
+from typing import List, Optional
+
+from fastapi import APIRouter, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 import shutil
 import os
@@ -10,7 +12,7 @@ import time
 from queue import Empty
 
 from app.core.runner import AgentRunner
-from app.core.llm import LLMFactory
+from app.core.agent_manager import AgentManager
 import litellm
 
 # 配置日志记录器
@@ -19,52 +21,146 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
+def _sanitize_filename(filename: str) -> str:
+    original_filename = os.path.basename(filename or "uploaded.pdf")
+    sanitized_filename = original_filename.replace(" ", "_")
+    return sanitized_filename or "uploaded.pdf"
+
+
+def _normalize_uploaded_files(file: Optional[UploadFile], files: Optional[List[UploadFile]]) -> List[UploadFile]:
+    normalized_files: List[UploadFile] = []
+
+    if file is not None:
+        normalized_files.append(file)
+
+    if files:
+        normalized_files.extend(files)
+
+    return [
+        uploaded_file
+        for uploaded_file in normalized_files
+        if getattr(uploaded_file, "filename", None) and getattr(uploaded_file, "file", None)
+    ]
+
 @router.get("/agents", summary="获取智能体列表", description="获取系统中所有可用的智能体及其描述。")
 async def list_agents():
     """列出所有可用的智能体。"""
     return AgentRunner.list_agents()
 
-@router.post("/run/{agent_id}", summary="运行智能体", description="上传PDF文件并启动指定的智能体任务。返回会话ID用于追踪进度。", response_description="包含会话ID、状态消息和文件路径的JSON对象。")
-async def run_agent(agent_id: str, file: UploadFile = File(...)):
+@router.post(
+    "/run/{agent_id}",
+    summary="运行智能体",
+    description="上传一个或多个 PDF 文件并启动指定的智能体任务。返回会话ID用于追踪进度。",
+    response_description="包含会话ID、状态消息和文件信息的JSON对象。",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["files"],
+                        "properties": {
+                            "files": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "format": "binary",
+                                },
+                                "description": "选择一个或多个 PDF 文件上传",
+                            }
+                        },
+                    }
+                }
+            },
+        }
+    },
+)
+async def run_agent(
+    agent_id: str,
+    request: Request,
+):
     """
     上传文件并启动指定的智能体。
     返回一个 session_id 用于订阅 SSE 更新。
     """
-    # 验证文件类型
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    manager = AgentManager()
+    agent = manager.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found")
+
+    form_data = await request.form()
+    legacy_file = form_data.get("file")
+    uploaded_files = _normalize_uploaded_files(legacy_file, form_data.getlist("files"))
+    if not uploaded_files:
+        raise HTTPException(status_code=400, detail="At least one PDF file is required.")
+
+    file_count = len(uploaded_files)
+    if file_count < agent.min_file_count:
+        raise HTTPException(status_code=400, detail=f"{agent.display_name} 至少需要上传 {agent.min_file_count} 个文件。")
+
+    if agent.max_file_count is not None and file_count > agent.max_file_count:
+        raise HTTPException(status_code=400, detail=f"{agent.display_name} 最多只支持 {agent.max_file_count} 个文件，当前上传了 {file_count} 个。")
+
+    for uploaded_file in uploaded_files:
+        if not uploaded_file.filename.lower().endswith('.pdf'):
+            raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     
-    # 生成会话 ID
     session_id = str(uuid.uuid4())
-    
-    # 创建上传目录
-    upload_dir = os.path.join("uploads")
-    if not os.path.exists(upload_dir):
-        os.makedirs(upload_dir)
-        
-    # 保存文件
-    # 文件名前缀加上 session_id 以避免冲突
-    original_filename = os.path.basename(file.filename)
-    sanitized_filename = original_filename.replace(" ", "_")
-    safe_filename = f"{session_id}_{sanitized_filename}"
-    file_path = os.path.join(upload_dir, safe_filename)
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    # 通过 AgentRunner 启动智能体
-    # 这将处理后台线程、历史记录和 LLM 回调上下文设置
+    upload_dir = os.path.abspath(os.path.join("uploads", session_id))
+    os.makedirs(upload_dir, exist_ok=True)
+
+    saved_files = []
+    used_names = set()
+    for index, uploaded_file in enumerate(uploaded_files, start=1):
+        original_filename = os.path.basename(uploaded_file.filename)
+        safe_name = _sanitize_filename(original_filename)
+
+        if safe_name in used_names:
+            name_root, extension = os.path.splitext(safe_name)
+            safe_name = f"{name_root}_{index}{extension}"
+
+        used_names.add(safe_name)
+        file_path = os.path.abspath(os.path.join(upload_dir, f"{index:02d}_{safe_name}"))
+
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(uploaded_file.file, buffer)
+
+        saved_files.append({
+            "name": original_filename,
+            "path": file_path,
+            "content_type": uploaded_file.content_type,
+        })
+
+    primary_file = saved_files[0]
+    inputs = {
+        "files": saved_files,
+        "file_paths": [item["path"] for item in saved_files],
+        "file_names": [item["name"] for item in saved_files],
+        "file_count": len(saved_files),
+        "primary_file": primary_file,
+        "primary_file_path": primary_file["path"],
+        "file_path": primary_file["path"],
+        "file_name": primary_file["name"],
+        "content_type": primary_file.get("content_type"),
+    }
+
     AgentRunner.start_agent(
         agent_id=agent_id, 
-        inputs={"file_path": os.path.abspath(file_path)}, 
+        inputs=inputs,
         session_id=session_id, 
-        original_filename=original_filename
+        files=saved_files
     )
     
     return {
         "session_id": session_id, 
         "message": "Agent started successfully", 
-        "file_path": file_path,
+        "file_path": primary_file["path"],
+        "file_paths": inputs["file_paths"],
+        "file_name": primary_file["name"],
+        "file_names": inputs["file_names"],
+        "file_count": len(saved_files),
         "status": "running",
         "created_at": time.time()
     }

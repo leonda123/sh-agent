@@ -92,7 +92,7 @@ class AgentManager:
         """
         return self._agents.get(agent_name)
 
-    def list_agents(self) -> List[Dict[str, str]]:
+    def list_agents(self) -> List[Dict[str, object]]:
         """
         列出所有已注册的智能体信息。
         """
@@ -100,7 +100,10 @@ class AgentManager:
             {
                 "id": agent.name,
                 "name": agent.display_name,
-                "description": agent.description
+                "description": agent.description,
+                "min_file_count": agent.min_file_count,
+                "max_file_count": agent.max_file_count,
+                "accepts_multiple_files": agent.accepts_multiple_files,
             }
             for agent in self._agents.values()
         ]

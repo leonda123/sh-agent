@@ -36,6 +36,51 @@ class BaseAgent(ABC):
         """
         pass
 
+    @property
+    def min_file_count(self) -> int:
+        return 1
+
+    @property
+    def max_file_count(self) -> Optional[int]:
+        return 1
+
+    @property
+    def accepts_multiple_files(self) -> bool:
+        return self.max_file_count is None or self.max_file_count > 1
+
+    def get_input_files(self, inputs: Dict[str, Any]) -> List[Dict[str, Any]]:
+        files = inputs.get("files")
+        if files:
+            return files
+
+        file_path = inputs.get("file_path")
+        if not file_path:
+            return []
+
+        return [
+            {
+                "name": inputs.get("file_name"),
+                "path": file_path,
+                "content_type": inputs.get("content_type"),
+            }
+        ]
+
+    def validate_file_inputs(self, inputs: Dict[str, Any]) -> List[Dict[str, Any]]:
+        files = self.get_input_files(inputs)
+        file_count = len(files)
+
+        if file_count < self.min_file_count:
+            raise ValueError(f"{self.display_name} 至少需要上传 {self.min_file_count} 个文件。")
+
+        if self.max_file_count is not None and file_count > self.max_file_count:
+            raise ValueError(f"{self.display_name} 最多只支持 {self.max_file_count} 个文件，当前上传了 {file_count} 个。")
+
+        return files
+
+    def get_primary_input_file(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        files = self.validate_file_inputs(inputs)
+        return files[0]
+
     @abstractmethod
     def run(self, inputs: Dict[str, Any], queue: Queue, stop_event: Event) -> Any:
         """

@@ -567,7 +567,7 @@
         </div>
 
         <div class="upload-section" id="upload-zone">
-            <input type="file" id="file-input" accept=".pdf">
+            <input type="file" id="file-input" accept=".pdf" multiple>
             <label for="file-input" class="upload-btn">选择 PDF 文档</label>
             <p style="margin-top: 10px; color: #666;" id="file-name">未选择文件</p>
             <button id="audit-btn" class="upload-btn" style="background-color: #27ae60; margin-top: 10px; display: none;">开始审核</button>
@@ -650,8 +650,42 @@
         let fullLogs = [];
         let finalResultMarkdown = "";
         let currentSessionId = null;
+        let availableAgents = [];
 
         const agentSelect = document.getElementById('agent-select');
+
+        function formatSelectedFiles(files) {
+            if (!files || files.length === 0) {
+                return '未选择文件';
+            }
+
+            if (files.length === 1) {
+                return files[0].name;
+            }
+
+            return `${files.length} 个文件：${Array.from(files).map(file => file.name).join('、')}`;
+        }
+
+        function updateUploadHint() {
+            const selectedAgent = availableAgents.find(agent => agent.id === agentSelect.value);
+            const maxFileCount = selectedAgent?.max_file_count;
+            const acceptsMultipleFiles = selectedAgent?.accepts_multiple_files;
+            const uploadLabel = document.querySelector('label[for="file-input"]');
+
+            fileInput.multiple = !!acceptsMultipleFiles;
+            if (uploadLabel) {
+                uploadLabel.textContent = acceptsMultipleFiles ? '选择 PDF 文档（可多选）' : '选择 PDF 文档';
+            }
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                if (acceptsMultipleFiles) {
+                    const limitText = maxFileCount ? `，最多 ${maxFileCount} 个` : '';
+                    fileName.textContent = `未选择文件（当前智能体支持多文件${limitText}）`;
+                } else {
+                    fileName.textContent = '未选择文件';
+                }
+            }
+        }
 
         // History Modal Logic
         const modal = document.getElementById("history-modal");
@@ -696,9 +730,11 @@
                     const duration = session.end_time ? ((session.end_time - session.start_time).toFixed(1) + 's') : '-';
                     const statusClass = `status-${session.status || 'unknown'}`;
                     
+                    const fileDisplayName = session.file_name || (session.file_names || []).join('、') || '-';
+
                     html += `<tr onclick="loadSessionDetail('${session.session_id}')">
                         <td>${startTime}</td>
-                        <td>${session.file_name}</td>
+                        <td>${fileDisplayName}</td>
                         <td><span class="status-badge ${statusClass}">${session.status}</span></td>
                         <td>${duration}</td>
                     </tr>`;
@@ -736,7 +772,8 @@
                 }
                 
                 // Set metadata
-                fileName.textContent = session.file_name + " (历史记录)";
+                const historyFiles = session.file_names && session.file_names.length > 0 ? session.file_names.join('、') : session.file_name;
+                fileName.textContent = `${historyFiles} (历史记录)`;
                 currentSessionId = sessionId;
                 
                 // Replay events
@@ -774,6 +811,7 @@
             try {
                 const response = await fetch('/api/agents');
                 const agents = await response.json();
+                availableAgents = agents;
                 
                 agentSelect.innerHTML = '';
                 
@@ -781,8 +819,12 @@
                     const option = document.createElement('option');
                     option.value = agent.id;
                     option.textContent = agent.name;
+                    option.dataset.acceptsMultipleFiles = String(!!agent.accepts_multiple_files);
+                    option.dataset.maxFileCount = agent.max_file_count ?? '';
                     agentSelect.appendChild(option);
                 });
+
+                updateUploadHint();
             } catch (error) {
                 console.error('Failed to load agents:', error);
                 agentSelect.innerHTML = '<option value="" disabled>加载失败</option>';
@@ -792,11 +834,21 @@
         loadAgents();
 
         // Handle file selection
+        agentSelect.addEventListener('change', () => {
+            fileInput.value = '';
+            auditBtn.style.display = 'none';
+            stopBtn.style.display = 'none';
+            updateUploadHint();
+        });
+
         fileInput.addEventListener('change', async (e) => {
             if (e.target.files.length > 0) {
-                fileName.textContent = e.target.files[0].name;
+                fileName.textContent = formatSelectedFiles(e.target.files);
                 auditBtn.style.display = 'inline-block';
                 stopBtn.style.display = 'none';
+            } else {
+                auditBtn.style.display = 'none';
+                updateUploadHint();
             }
         });
         
@@ -996,8 +1048,8 @@
         }
 
         auditBtn.addEventListener('click', async () => {
-            const file = fileInput.files[0];
-            if (!file) return;
+            const files = Array.from(fileInput.files || []);
+            if (files.length === 0) return;
 
             // Reset UI
             logsDiv.innerHTML = '';
@@ -1014,14 +1066,25 @@
             fullLogs = [];
             finalResultMarkdown = "";
 
-            const formData = new FormData();
-            formData.append("file", file);
-
             const agentId = document.getElementById('agent-select').value;
             if (!agentId) {
                 alert('请先选择一个智能体');
                 return;
             }
+
+            const selectedAgent = availableAgents.find(agent => agent.id === agentId);
+            if (selectedAgent?.max_file_count && files.length > selectedAgent.max_file_count) {
+                alert(`${selectedAgent.name} 当前最多支持 ${selectedAgent.max_file_count} 个文件`);
+                loadingDiv.style.display = 'none';
+                auditBtn.style.display = 'inline-block';
+                stopBtn.style.display = 'none';
+                return;
+            }
+
+            const formData = new FormData();
+            files.forEach(file => {
+                formData.append("files", file);
+            });
 
             try {
                 // Step 1: Upload and start audit
@@ -1039,7 +1102,7 @@
                 const sessionId = data.session_id;
                 currentSessionId = sessionId;
                 
-                addLog('info', '系统', `文件已上传，会话ID: ${sessionId}`);
+                addLog('info', '系统', `已上传 ${data.file_count || files.length} 个文件，会话ID: ${sessionId}`);
                 addLog('info', '系统', '正在连接事件流...');
 
                 // Initialize progress

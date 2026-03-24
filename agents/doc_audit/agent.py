@@ -25,9 +25,7 @@ class DocAuditAgent(BaseAgent):
         return "自动检查文档中的图表目录与正文内容是否一致。"
 
     def run(self, inputs: Dict[str, Any], queue: Queue, stop_event: Event) -> Any:
-        pdf_path = inputs.get("file_path")
-        if not pdf_path:
-            raise ValueError("File path is required for DocAuditAgent")
+        pdf_path = self.get_primary_input_file(inputs).get("path")
 
         # Initialize Crew components
         roles = FigureTableRoles()

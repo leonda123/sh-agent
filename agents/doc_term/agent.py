@@ -24,9 +24,7 @@ class DocTermAgent(BaseAgent):
         return "检查文档中是否包含术语/缩略语章节，并核实其定义与正文使用的一致性。"
 
     def run(self, inputs: Dict[str, Any], queue: Queue, stop_event: Event) -> Any:
-        pdf_path = inputs.get("file_path")
-        if not pdf_path:
-            raise ValueError("File path is required for DocTermAgent")
+        pdf_path = self.get_primary_input_file(inputs).get("path")
 
         # Initialize LLM
         llm = LLMFactory.get_aliyun_llm()
@@ -173,11 +171,4 @@ class DocTermAgent(BaseAgent):
         )
 
         result = crew.kickoff()
-        
-        # Send completion event
-        queue.put({
-            "type": "result",
-            "data": str(result)
-        })
-        
         return result
