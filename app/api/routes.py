@@ -9,6 +9,7 @@ import logging
 import json
 import asyncio
 import time
+import re
 from queue import Empty
 
 from app.core.runner import AgentRunner
@@ -297,10 +298,50 @@ async def get_history_session(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     return session
 
+
+def _normalize_report_field_value(value: str) -> str:
+    normalized_value = re.sub(r"\*\*|__|`", "", value or "")
+    normalized_value = normalized_value.replace("<br>", " ").replace("<br/>", " ").replace("<br />", " ")
+    return normalized_value.strip()
+
+
+def _extract_report_field(markdown_text: str, field_name: str) -> Optional[str]:
+    if not markdown_text:
+        return None
+
+    pattern = rf"^\|\s*{re.escape(field_name)}\s*\|\s*(.*?)\s*\|$"
+    match = re.search(pattern, markdown_text, flags=re.MULTILINE)
+    if not match:
+        return None
+
+    value = _normalize_report_field_value(match.group(1))
+    return value or None
+
+
+def _extract_explicit_conclusion(markdown_text: str) -> Optional[bool]:
+    explicit_result = _extract_report_field(markdown_text, "审计结果")
+    if not explicit_result:
+        explicit_result = _extract_report_field(markdown_text, "检查项最终结论")
+
+    if not explicit_result:
+        return None
+
+    if any(keyword in explicit_result for keyword in ("不通过", "不符合", "失败", "存疑")):
+        return False
+    if "通过" in explicit_result:
+        return True
+    return None
+
+
 async def extract_conclusion_from_markdown(markdown_text: str) -> bool:
     """使用 LLM 从 Markdown 结果中提取是否通过的结论"""
     if not markdown_text:
         return False
+
+    explicit_conclusion = _extract_explicit_conclusion(markdown_text)
+    if explicit_conclusion is not None:
+        return explicit_conclusion
+
     try:
         model_name = os.getenv("MODEL_NAME", "qwen3.5-flash")
         if not model_name.startswith("openai/"):
@@ -314,7 +355,7 @@ async def extract_conclusion_from_markdown(markdown_text: str) -> bool:
             api_key=api_key,
             base_url=base_url,
             messages=[
-                {"role": "system", "content": "你是一个审计结果提取助手。请阅读以下审计报告，并判断该文档是否符合要求（通过审计）。如果符合/通过/无错误，请仅回复 'true'；如果不符合/不通过/存在错误/存在不一致，请仅回复 'false'。除了 'true' 或 'false' 不要输出任何其他内容。"},
+                {"role": "system", "content": "你是一个审计结果提取助手。请优先读取报告综述中的“审计结果”或“检查项最终结论”字段，并仅根据该字段判断文档是否通过审计。`AB轮交叉验证状态` 只表示复核过程是否出现分歧，不等同于文档错误，不能仅因该字段出现“存在分歧”就判定 false。如果审计结果为通过/符合，请仅回复 'true'；如果审计结果为不通过/不符合/存疑，请仅回复 'false'。除了 'true' 或 'false' 不要输出任何其他内容。"},
                 {"role": "user", "content": markdown_text}
             ],
             temperature=0.1
@@ -323,8 +364,10 @@ async def extract_conclusion_from_markdown(markdown_text: str) -> bool:
         return "true" in content
     except Exception as e:
         logger.error(f"Failed to extract conclusion via LLM: {e}")
-        # 降级：简单的关键字匹配
-        return "不通过" not in markdown_text and "不一致" not in markdown_text and "错误" not in markdown_text
+        fallback_conclusion = _extract_explicit_conclusion(markdown_text)
+        if fallback_conclusion is not None:
+            return fallback_conclusion
+        return "不通过" not in markdown_text and "错误" not in markdown_text
 
 @router.get("/result/{session_id}", summary="获取结构化结果", description="获取指定会话的JSON格式的审核结果，包含结论(true/false)和完整的Markdown报告。")
 async def get_structured_result(session_id: str):
@@ -350,9 +393,15 @@ async def get_structured_result(session_id: str):
         
     result_md = session.get("result", "")
     conclusion = await extract_conclusion_from_markdown(result_md)
+    ab_consistency_status = _extract_report_field(result_md, "AB轮交叉验证状态")
+    audit_result = _extract_report_field(result_md, "审计结果")
+    finding_conclusion = _extract_report_field(result_md, "检查项最终结论")
     
     return {
         "conclusion": conclusion,
+        "audit_result": audit_result,
+        "finding_conclusion": finding_conclusion,
+        "ab_consistency_status": ab_consistency_status,
         "result": result_md,
         "status": status
     }
