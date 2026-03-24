@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能文档审核系统 - 图表清单检查</title>
+    <title>智能文档审核系统</title>
     <!-- Use local marked.js for offline support -->
     <script src="/static/marked.min.js"></script>
     <style>
@@ -545,8 +545,8 @@
 <body>
     <div class="container">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h1 style="margin: 0; flex-grow: 1;">智能文档审核系统 - 图表清单检查</h1>
-            <button id="view-history-btn" class="secondary-btn">查看历史记录</button>
+            <h1 style="margin: 0; flex-grow: 1;">智能文档审核系统</h1>
+            <!-- <button id="view-history-btn" class="secondary-btn">查看历史记录</button> -->
         </div>
 
         <!-- History Modal -->
@@ -580,36 +580,7 @@
 
         <div class="progress-container" id="progressContainer" style="display:none;">
         <div class="progress-steps" id="progressSteps">
-            <!-- Phase 1 -->
-            <div class="step-item" id="step-phase_1">
-                <div class="step-circle">1</div>
-                <div class="step-label">文档处理</div>
-                <div class="step-time" id="time-phase_1">--</div>
-            </div>
-            <!-- Phase 2 -->
-            <div class="step-item" id="step-phase_2">
-                <div class="step-circle">2</div>
-                <div class="step-label">内容提取</div>
-                <div class="step-time" id="time-phase_2">--</div>
-            </div>
-            <!-- Phase 3 -->
-            <div class="step-item" id="step-phase_3">
-                <div class="step-circle">3</div>
-                <div class="step-label">交叉验证</div>
-                <div class="step-time" id="time-phase_3">--</div>
-            </div>
-            <!-- Phase 4 -->
-            <div class="step-item" id="step-phase_4">
-                <div class="step-circle">4</div>
-                <div class="step-label">一致性审计</div>
-                <div class="step-time" id="time-phase_4">--</div>
-            </div>
-            <!-- Phase 5 -->
-            <div class="step-item" id="step-phase_5">
-                <div class="step-circle">5</div>
-                <div class="step-label">报告生成</div>
-                <div class="step-time" id="time-phase_5">--</div>
-            </div>
+            <!-- Steps will be dynamically generated via JavaScript -->
         </div>
         <div class="total-time">总耗时: <span id="totalDuration">0s</span></div>
     </div>
@@ -646,107 +617,6 @@
                         <button id="download-result-btn" class="action-btn" style="display: none;">下载结果 (MD)</button>
                     </div>
                     <div id="result-content" class="panel-content">等待审核...</div>
-                </div>
-            </div>
-        </div>
-        <!-- API Documentation Section -->
-        <div class="api-docs-section">
-            <div class="api-docs-header" onclick="toggleApiDocs()">
-                <h2 style="margin:0; font-size: 18px;">🛠️ API 接口文档 (开发者参考)</h2>
-                <span id="api-toggle-icon">▼</span>
-            </div>
-            <div id="api-docs-content" class="api-docs-content">
-                <p style="color:#666; margin-bottom:20px;">本平台提供标准 REST API 接口，支持外部系统集成。以下是主要接口说明：</p>
-                
-                <div class="api-endpoint">
-                    <div>
-                        <span class="api-method method-get">GET</span>
-                        <span class="api-url">/api/agents</span>
-                    </div>
-                    <div class="api-desc">获取当前可用的智能体列表。</div>
-                    <div class="api-block">Response:
-[
-  {
-    "id": "doc_audit",
-    "name": "文档图表一致性审计",
-    "description": "..."
-  }
-]</div>
-                </div>
-
-                <div class="api-endpoint">
-                    <div>
-                        <span class="api-method method-post">POST</span>
-                        <span class="api-url">/api/run/{agent_id}</span>
-                    </div>
-                    <div class="api-desc">运行指定智能体。需上传文件。</div>
-                    <div class="api-block">Parameters:
-- agent_id (path): 智能体ID (如 doc_audit)
-- file (form-data): PDF文件
-
-Response:
-{
-  "session_id": "uuid-string",
-  "message": "Agent started successfully",
-  "file_path": "uploads/...",
-  "status": "running",
-  "created_at": 1710000000.0
-}</div>
-                </div>
-                
-                <div class="api-endpoint">
-                    <div>
-                        <span class="api-method method-get">GET</span>
-                        <span class="api-url">/api/history</span>
-                    </div>
-                    <div class="api-desc">获取历史任务会话列表。</div>
-                    <div class="api-block">Response:
-[
-  {
-    "session_id": "...",
-    "agent_id": "...",
-    "file_name": "...",
-    "start_time": ...,
-    "status": "completed"
-  }
-]</div>
-                </div>
-
-                <div class="api-endpoint">
-                    <div>
-                        <span class="api-method method-get">GET</span>
-                        <span class="api-url">/api/history/{session_id}</span>
-                    </div>
-                    <div class="api-desc">获取指定会话的完整日志和结果。</div>
-                </div>
-
-                <div class="api-endpoint">
-                    <div>
-                        <span class="api-method method-get">GET</span>
-                        <span class="api-url">/api/stream/{session_id}</span>
-                    </div>
-                    <div class="api-desc">监听任务进度 (SSE)。</div>
-                    <div class="api-block">Response (Stream):
-event: start
-data: ...
-
-event: step
-data: {"type": "step", "content": "..."}
-
-event: result
-data: ...</div>
-                </div>
-
-                <div class="api-endpoint">
-                    <div>
-                        <span class="api-method method-post">POST</span>
-                        <span class="api-url">/api/stop/{session_id}</span>
-                    </div>
-                    <div class="api-desc">停止正在运行的任务。</div>
-                    <div class="api-block">Response:
-{
-  "message": "Stop signal sent..."
-}</div>
                 </div>
             </div>
         </div>
@@ -789,13 +659,17 @@ data: ...</div>
         const span = document.getElementsByClassName("close")[0];
         const historyListContainer = document.getElementById("history-list-container");
 
-        btn.onclick = function() {
-            modal.style.display = "block";
-            loadHistory();
+        if (btn) {
+            btn.onclick = function() {
+                modal.style.display = "block";
+                loadHistory();
+            }
         }
 
-        span.onclick = function() {
-            modal.style.display = "none";
+        if (span) {
+            span.onclick = function() {
+                modal.style.display = "none";
+            }
         }
 
         window.onclick = function(event) {
@@ -966,15 +840,74 @@ data: ...</div>
         });
 
         let currentPhaseIndex = -1;
-        const phaseOrder = ['phase_1', 'phase_2', 'phase_3', 'phase_4', 'phase_5'];
-        const phaseTaskRequirements = { phase_1: 1, phase_2: 2, phase_3: 1, phase_4: 1, phase_5: 1 };
+        let phaseOrder = []; // Will be populated dynamically based on config
+        
+        // Agent Phase Configuration
+        const agentPhaseConfig = {
+            'doc_audit': [
+                { id: 'phase_1', label: '文档处理' },
+                { id: 'phase_2', label: '内容提取' },
+                { id: 'phase_3', label: '交叉验证' },
+                { id: 'phase_4', label: '一致性审计' },
+                { id: 'phase_5', label: '报告生成' }
+            ],
+            'doc_term': [
+                { id: 'phase_1', label: '文档处理' },
+                { id: 'phase_2', label: '术语提取' },
+                { id: 'phase_3', label: '术语审计' },
+                { id: 'phase_4', label: '零引用复核' },
+                { id: 'phase_5', label: '报告生成' }
+            ],
+            'default': [
+                { id: 'phase_1', label: '阶段一' },
+                { id: 'phase_2', label: '阶段二' },
+                { id: 'phase_3', label: '阶段三' },
+                { id: 'phase_4', label: '阶段四' },
+                { id: 'phase_5', label: '阶段五' }
+            ]
+        };
+
+        const agentTaskRequirements = {
+            'doc_audit': { phase_1: 1, phase_2: 2, phase_3: 1, phase_4: 1, phase_5: 1 },
+            'doc_term': { phase_1: 1, phase_2: 3, phase_3: 1, phase_4: 1, phase_5: 1 },
+            'default': { phase_1: 1, phase_2: 1, phase_3: 1, phase_4: 1, phase_5: 1 }
+        };
+
+        let phaseTaskRequirements = agentTaskRequirements['default'];
         let phaseTaskCompletions = {};
         let phaseStartTimes = {};
         let totalStartTime = null;
         let timerInterval = null;
 
+        // Render progress steps based on agent ID
+        function renderProgressSteps(agentId) {
+            const container = document.getElementById('progressSteps');
+            container.innerHTML = ''; // Clear existing steps
+            
+            const config = agentPhaseConfig[agentId] || agentPhaseConfig['default'];
+            phaseOrder = config.map(step => step.id);
+            
+            config.forEach((step, index) => {
+                const stepHtml = `
+                    <div class="step-item" id="step-${step.id}">
+                        <div class="step-circle">${index + 1}</div>
+                        <div class="step-label">${step.label}</div>
+                        <div class="step-time" id="time-${step.id}">--</div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', stepHtml);
+            });
+        }
+
         // Phase management functions
         function initProgress() {
+            // Ensure correct steps are rendered for current agent
+            const currentAgent = document.getElementById('agent-select').value;
+            if (currentAgent) {
+                renderProgressSteps(currentAgent);
+                phaseTaskRequirements = agentTaskRequirements[currentAgent] || agentTaskRequirements['default'];
+            }
+            
             document.getElementById('progressContainer').style.display = 'block';
             currentPhaseIndex = -1;
             phaseTaskCompletions = {};
@@ -1199,22 +1132,34 @@ data: ...</div>
                 if (!phaseId || phaseId === 'unknown_phase') {
                     if (agentRole) {
                         const roleToPhase = {
+                            // doc_audit roles
                             '文档处理专家': 'phase_1',
                             '内容分析师': 'phase_2',
                             '交叉验证员': 'phase_3',
                             '审计员': 'phase_4',
-                            '审查员': 'phase_5'
+                            '审查员': 'phase_5',
+                            // doc_term roles
+                            '术语提取员': 'phase_2',
+                            '术语审计员': 'phase_3',
+                            '零引用复核员': 'phase_4',
+                            '报告生成员': 'phase_5'
                         };
                         phaseId = roleToPhase[agentRole];
                     }
                 }
                 if ((!phaseId || phaseId === 'unknown_phase') && msg.content) {
                     const roleToPhase = {
+                        // doc_audit roles
                         '文档处理专家': 'phase_1',
                         '内容分析师': 'phase_2',
                         '交叉验证员': 'phase_3',
                         '审计员': 'phase_4',
-                        '审查员': 'phase_5'
+                        '审查员': 'phase_5',
+                        // doc_term roles
+                        '术语提取员': 'phase_2',
+                        '术语审计员': 'phase_3',
+                        '零引用复核员': 'phase_4',
+                        '报告生成员': 'phase_5'
                     };
                     for (const roleName in roleToPhase) {
                         if (msg.content.includes(roleName)) {

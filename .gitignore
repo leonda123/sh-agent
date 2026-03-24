@@ -22,6 +22,8 @@ share/python-wheels/
 *.egg
 MANIFEST
 .trae/
+MultiAgent_Research_Report.md
+agent_creation_guide.md
 
 # Virtual Environment
 venv/

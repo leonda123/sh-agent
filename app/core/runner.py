@@ -166,7 +166,8 @@ def _run_agent_in_background(agent_id: str, session_id: str, inputs: dict, queue
         # 清理上下文变量
         session_usage.reset(token_usage)
         session_queue.reset(token_queue)
-        pass
+        # 发送 None 以结束流式传输
+        queue.put(None)
 
 class AgentRunner:
     """

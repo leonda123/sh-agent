@@ -10,6 +10,8 @@ import time
 from queue import Empty
 
 from app.core.runner import AgentRunner
+from app.core.llm import LLMFactory
+import litellm
 
 # 配置日志记录器
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -139,6 +141,50 @@ async def stream_audit(session_id: str):
             
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
+@router.get("/tasks/active", summary="获取当前活动任务", description="获取所有正在运行中的智能体任务列表。")
+async def list_active_tasks():
+    """列出所有状态为 running 的当前任务。"""
+    sessions = AgentRunner.get_history_manager().list_sessions()
+    active_sessions = [s for s in sessions if s.get("status") == "running"]
+    return active_sessions
+
+@router.get("/task/progress/{session_id}", summary="获取任务当前进度", description="非流式接口，返回指定会话的当前状态、已完成的阶段以及最新的一条日志。")
+async def get_task_progress(session_id: str):
+    """获取指定任务的最新进度信息，适合前端轮询。"""
+    session = AgentRunner.get_history_manager().get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    events = session.get("events", [])
+    
+    # 提取完成的阶段和最新日志
+    completed_tasks = []
+    latest_step = None
+    
+    for item in events:
+        event = item.get("event", {})
+        e_type = event.get("type")
+        
+        if e_type == "task_completed":
+            data = event.get("data", {})
+            completed_tasks.append({
+                "phase_id": data.get("phase_id"),
+                "agent": data.get("agent"),
+                "description": data.get("description")
+            })
+        elif e_type == "step":
+            latest_step = event.get("content")
+            
+    return {
+        "session_id": session_id,
+        "status": session.get("status"),
+        "start_time": session.get("start_time"),
+        "completed_tasks_count": len(completed_tasks),
+        "completed_tasks": completed_tasks,
+        "latest_step": latest_step,
+        "result": session.get("result") if session.get("status") == "completed" else None
+    }
+
 @router.get("/history", summary="获取历史记录", description="获取所有历史任务会话的列表（按时间倒序）。")
 async def list_history():
     """列出所有历史会话。"""
@@ -151,3 +197,63 @@ async def get_history_session(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+async def extract_conclusion_from_markdown(markdown_text: str) -> bool:
+    """使用 LLM 从 Markdown 结果中提取是否通过的结论"""
+    if not markdown_text:
+        return False
+    try:
+        model_name = os.getenv("MODEL_NAME", "qwen3.5-flash")
+        if not model_name.startswith("openai/"):
+            model_name = f"openai/{model_name}"
+            
+        api_key = os.getenv("ALIYUN_API_KEY")
+        base_url = os.getenv("ALIYUN_API_BASE")
+        
+        response = await litellm.acompletion(
+            model=model_name,
+            api_key=api_key,
+            base_url=base_url,
+            messages=[
+                {"role": "system", "content": "你是一个审计结果提取助手。请阅读以下审计报告，并判断该文档是否符合要求（通过审计）。如果符合/通过/无错误，请仅回复 'true'；如果不符合/不通过/存在错误/存在不一致，请仅回复 'false'。除了 'true' 或 'false' 不要输出任何其他内容。"},
+                {"role": "user", "content": markdown_text}
+            ],
+            temperature=0.1
+        )
+        content = response.choices[0].message.content.strip().lower()
+        return "true" in content
+    except Exception as e:
+        logger.error(f"Failed to extract conclusion via LLM: {e}")
+        # 降级：简单的关键字匹配
+        return "不通过" not in markdown_text and "不一致" not in markdown_text and "错误" not in markdown_text
+
+@router.get("/result/{session_id}", summary="获取结构化结果", description="获取指定会话的JSON格式的审核结果，包含结论(true/false)和完整的Markdown报告。")
+async def get_structured_result(session_id: str):
+    """
+    获取结构化的最终结果。
+    返回 JSON 格式封装：
+    {
+      "conclusion": true/false,
+      "result": "markdown content..."
+    }
+    """
+    session = AgentRunner.get_history_manager().get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    status = session.get("status")
+    if status != "completed":
+        return {
+            "conclusion": False,
+            "result": "任务尚未完成或已失败。",
+            "status": status
+        }
+        
+    result_md = session.get("result", "")
+    conclusion = await extract_conclusion_from_markdown(result_md)
+    
+    return {
+        "conclusion": conclusion,
+        "result": result_md,
+        "status": status
+    }
