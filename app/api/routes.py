@@ -185,10 +185,13 @@ async def get_task_progress(session_id: str):
         "result": session.get("result") if session.get("status") == "completed" else None
     }
 
-@router.get("/history", summary="获取历史记录", description="获取所有历史任务会话的列表（按时间倒序）。")
+@router.get("/history", summary="获取历史记录", description="获取所有已结束（非运行中）的历史任务会话列表（按时间倒序）。")
 async def list_history():
-    """列出所有历史会话。"""
-    return AgentRunner.get_history_manager().list_sessions()
+    """列出所有已结束的历史会话（完成、失败或停止）。"""
+    sessions = AgentRunner.get_history_manager().list_sessions()
+    # 过滤掉正在运行的任务，只返回已经结束的任务
+    history_sessions = [s for s in sessions if s.get("status") != "running"]
+    return history_sessions
 
 @router.get("/history/{session_id}", summary="获取会话详情", description="获取指定会话的详细信息，包括完整的日志记录。")
 async def get_history_session(session_id: str):
