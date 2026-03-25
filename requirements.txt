@@ -4,6 +4,6 @@ fastapi
 uvicorn
 python-multipart
 pdf2docx
-markitdown
+markitdown[docx]
 python-dotenv
 litellm
