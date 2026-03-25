@@ -58,6 +58,10 @@ def read_root():
 async def read_index():
     return FileResponse(os.path.join(FRONTEND_DIR, 'index.html'))
 
+@app.get("/history_page")
+async def read_history():
+    return FileResponse(os.path.join(FRONTEND_DIR, 'history.html'))
+
 # Silence Vite HMR requests from dev environments
 @app.get("/@vite/client", include_in_schema=False)
 async def vite_client():
