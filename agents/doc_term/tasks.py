@@ -20,58 +20,73 @@ class TermAuditTasks:
             max_retries=2
         )
 
-    def extract_terms_task_a(self, agent, process_task):
+    def extract_terms_task_a(self, agent, markdown_path, seed_context):
         return Task(
-            description="""
+            description=f"""
             【阶段二：术语提取（初次提取）】
-            1. [输入分析]：检查上一步生成的 Markdown 内容。如果文档未成功转换，输出错误信息。
+            1. [输入分析]：读取 Markdown 文件 `{markdown_path}`。如果文件不可读，输出错误信息。
             2. [结构识别]：查找是否存在专门的“术语和缩略语”、“定义”、“缩写词表”、“名词解释”等类似章节，也要留意前言、附录等可能包含术语定义的区域。
             3. [提取内容]：
                - 如果存在上述章节，全面且彻底地提取其中列出的**所有**术语和缩略语及其定义，**宁滥勿缺**。
                - 注意兼容并提取不同格式的术语：表格格式、列表格式（例如使用破折号或冒号分隔）、甚至是段落中明确标注的术语。
                - 提取时请精确记录该章节的**起始位置和结束位置**（如大致行号或特征文本 Start/End Marker），这对于后续排除该区域至关重要。
             4. [输出生成]：生成一份初步的、尽可能完整的术语/缩略语列表，并附带准确的位置标记。
+
+            【规则兜底基线】
+            {seed_context}
             
             **关键指令**：
+            - 你必须使用 `Read File` 工具读取 `{markdown_path}` 的原文内容。
+            - 上述“规则兜底基线”是**最低覆盖集合**，你的结果不得少于该集合；若你认为某项应剔除，必须逐条说明原因。
             - 如果没有找到专门的术语章节，明确输出“未找到术语章节”。
             - 仅提取明确为定义的术语，不要将正文中的普通词汇当成术语。
             - 记录术语章节的确切范围（Start/End Marker）。
             """,
             expected_output="包含初次提取的术语列表和术语章节位置信息的结构化数据。",
             agent=agent,
-            context=[process_task],
+            context=[],
             max_retries=2
         )
 
-    def extract_terms_task_b(self, agent, process_task):
+    def extract_terms_task_b(self, agent, markdown_path, seed_context):
         return Task(
-            description="""
+            description=f"""
             【阶段二：术语提取（二次校验）】
-            1. [独立提取]：重新读取 Markdown 内容，进行一次**彻底的、防御性的**术语和缩略语提取。
+            1. [独立提取]：重新读取 Markdown 文件 `{markdown_path}`，进行一次**彻底的、防御性的**术语和缩略语提取。
             2. [查漏补缺]：主要目标是发现第一次提取（如果由他人完成）可能遗漏的术语。仔细扫描表格的每一行、列表的每一项，特别是那些格式不规范、隐藏在长段落中或分散在多个不同小节（如前言、附录）中的术语定义。
             3. [缩略语专门检查]：很多时候缩略语（如 `PDF (Portable Document Format)`、`API`）会被遗漏，请专门进行一次缩写词表的扫描。
             4. [交叉验证]：将识别出的术语定义与普通正文严格区分。记录术语章节的具体位置。
+
+            【规则兜底基线】
+            {seed_context}
             
             **关键指令**：
+            - 你必须使用 `Read File` 工具读取 `{markdown_path}` 的原文内容。
+            - 将“规则兜底基线”视为必查清单，必须逐项确认。
             - 完全独立进行提取，目标是**100%覆盖率**，宁可多提取，绝不能漏掉任何一个可能定义的术语和缩略语。
             - 同样记录术语章节的确切范围（Start/End Marker）。
             """,
             expected_output="包含二次提取的术语列表的结构化数据。",
             agent=agent,
-            context=[process_task],
+            context=[],
             max_retries=2
         )
 
-    def merge_terms_task(self, agent, extract_task_a, extract_task_b):
+    def merge_terms_task(self, agent, extract_task_a, extract_task_b, seed_context):
         return Task(
-            description="""
+            description=f"""
             【阶段二：术语合并与去重】
             1. [对比分析]：对比两次提取的结果（Task A 和 Task B）。
             2. [合并列表]：将两个列表合并，去除重复项（基于术语名称，忽略大小写差异）。
             3. [范围确认]：确认术语章节在文档中的确切范围（Start/End Marker），用于后续审计时排除。
             4. [最终输出]：生成一份经过双重校验的、完整的术语/缩略语列表。
+
+            【规则兜底基线】
+            {seed_context}
             
             **关键指令**：
+            - 合并结果必须覆盖“规则兜底基线”的全部术语/缩略语。
+            - 如果 Task A/Task B 缺少基线项，你必须主动补入，不得因为上游遗漏而继续丢失。
             - 宁可多选不可漏选（Recall is priority）。
             - 明确标记出“术语章节”的内容范围，后续审计将**严格排除**此范围内的匹配。
             """,
@@ -81,16 +96,16 @@ class TermAuditTasks:
             max_retries=1
         )
 
-    def audit_terms_task(self, agent, merge_task, process_task):
+    def audit_terms_task(self, agent, merge_task, markdown_path, seed_context, retrieval_context):
         return Task(
-            description="""
+            description=f"""
             【阶段三：术语审计】
             1. [输入分析]：获取合并后的术语列表和**术语章节排除范围**。如果列表为空，跳过。
             2. [范围排除]：
                - **CRITICAL**: 在全文扫描时，**必须跳过/忽略**“术语和缩略语”定义章节本身。
                - 只统计在**正文**（Introduction, Body, Appendices等）中的出现次数。
                - 任何在定义章节内的匹配都**不计入**使用次数。
-            3. [全文扫描]：读取 Markdown 文件，遍历正文部分。
+            3. [全文扫描]：读取 Markdown 文件 `{markdown_path}`，遍历正文部分。
             4. [计数与全量定位]：对于列表中的**每一个**术语/缩略语：
                - 统计其在**排除定义章节后**的出现次数。
                - **记录所有的原文出处**：如果该术语在正文中出现多次，请列出**每一次**出现的具体位置（如：章节标题/页码）。
@@ -99,47 +114,64 @@ class TermAuditTasks:
                - 出现次数 >= 1（在正文中）：标记为“正确”。
                - 出现次数 == 0（在正文中）：标记为“错误”（待复核）。
             6. [数据输出]：生成详细的审计记录表，确保每个术语都附带完整的证据链。
+
+            【规则兜底基线】
+            {seed_context}
+
+            【程序化检索基线】
+            {retrieval_context}
             
             **关键指令**：
+            - 你必须使用 `Read File` 工具读取 `{markdown_path}`。
+            - 审计对象必须覆盖合并结果以及规则兜底基线，不能遗漏基线中的术语。
+            - 优先采用“程序化检索基线”中的次数与原文出处；若你发现基线与原文存在冲突，必须明确指出差异，不要静默改写。
             - **严格排除定义章节**：这是为了防止“仅在定义中出现，未在正文中使用”的情况被误判为正确。
             - **全量证据**：尽可能列出所有的引用位置和对应的上下文片段。
             - **格式统一**：所有证据片段的引用格式需保持一致（如：`[位置] 片段内容`）。
             """,
             expected_output="包含每个术语的全量出现位置、**所有原文片段**和初步状态的详细审计记录。",
             agent=agent,
-            context=[merge_task, process_task],
+            context=[merge_task],
             max_retries=3
         )
 
-    def verify_zero_count_task(self, agent, audit_task, process_task):
+    def verify_zero_count_task(self, agent, audit_task, markdown_path, retrieval_context):
         return Task(
-            description="""
+            description=f"""
             【阶段四：零引用复核与全量盘点】
             1. [输入继承]：接收阶段三的所有审计结果（包含已标记为“正确”的术语及其全量证据）以及**术语章节排除范围**。
             2. [筛选目标]：找出其中标记为“错误”或出现次数为 0 的术语。
-            3. [独立复核]：对于这些 0 引用的术语，再次读取 Markdown 文件，进行深度搜索（模糊匹配、跨行搜索、表格搜索）。
+            3. [独立复核]：对于这些 0 引用的术语，再次读取 Markdown 文件 `{markdown_path}`，进行深度搜索（模糊匹配、跨行搜索、表格搜索）。
                - **注意**：同样必须严格遵守“排除定义章节”的规则，只在正文中查找。
             4. [数据更新]：
                - 若复核找到（在正文中）：更新次数，并**记录所有的出处和原文片段**（同阶段三要求）。
                - 若仍未找到：维持“错误”状态。
             5. [全量合并]：将“无需复核的正确术语”与“复核后的术语”合并，形成最终的全量审计清单。
+
+            【程序化检索基线】
+            {retrieval_context}
             
             **关键指令**：
+            - 你必须使用 `Read File` 工具读取 `{markdown_path}`。
+            - 复核时优先核对“程序化检索基线”给出的次数与证据片段。
             - **输出必须是全量数据**：不能只输出复核过的术语，必须包含阶段三中已经通过的术语。
             - **信息完整性**：确保每个术语都有：名称、定义、出现次数、状态、以及**完整的证据列表**（位置+片段）。
             - **排除原则**：任何在定义章节内的“复活”都是无效的。
             """,
             expected_output="经过复核与合并的最终全量术语审计清单，包含所有术语的详细状态和全量证据。",
             agent=agent,
-            context=[audit_task, process_task],
+            context=[audit_task],
             max_retries=2
         )
 
-    def generate_report_task(self, agent, extract_task, verify_task):
+    def generate_report_task(self, agent, extract_task, verify_task, retrieval_context):
         return Task(
-            description="""
+            description=f"""
             【阶段五：生成报告】
             根据阶段四输出的**全量审计数据**（包含完整的引用证据链），生成最终的 Markdown 格式报告。
+
+            【程序化检索基线】
+            {retrieval_context}
             
             格式要求：
             1. **概述**：简要说明文档是否包含术语/缩略语章节，以及审计的总体情况。
@@ -159,6 +191,7 @@ class TermAuditTasks:
             5. **总结**：给出最终的合规性结论。
             
             **关键指令**：
+            - 对出现次数、原文出处和状态判断，优先采用“程序化检索基线”中的稳定结果。
             - 表格是报告的核心，必须详尽且格式统一。
             - 确保“详细引用证据”列包含真实的原文片段，不得编造。
             - 保持输出一致性：所有行都应遵循相同的排版规则。
