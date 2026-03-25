@@ -4,7 +4,7 @@ services:
     image: sh-agent:latest
     container_name: sh-agent
     ports:
-      - "5050:5050"
+      - "18000:5050"
     environment:
       - APP_HOST=0.0.0.0
       - APP_PORT=5050
