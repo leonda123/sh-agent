@@ -516,6 +516,92 @@ class DocTermAgent(BaseAgent):
             lines.append(f'  {index}. {entry["term"]} => {entry["definition"] or "定义缺失"}')
         return "\n".join(lines)
 
+    def _evaluate_audit_result(self, seed_data: Dict[str, Any], retrieval_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+        missing_reference_terms = [row["term"] for row in retrieval_rows if row["count"] == 0]
+        glossary_found = bool(seed_data["title"])
+        entries_found = bool(seed_data["entries"])
+        passed = glossary_found and entries_found and not missing_reference_terms
+
+        if not glossary_found:
+            key_finding = "未找到术语/缩略语章节，无法形成有效的术语定义基线。"
+        elif not entries_found:
+            key_finding = "已定位术语/缩略语章节，但未提取到有效术语条目。"
+        elif missing_reference_terms:
+            key_finding = f'存在已声明但未在正文引用的术语/缩略语：{", ".join(missing_reference_terms)}。'
+        else:
+            key_finding = f'共检查 {len(retrieval_rows)} 项术语/缩略语，均已在正文找到引用。'
+
+        return {
+            "passed": passed,
+            "audit_result": "通过" if passed else "不通过",
+            "finding_conclusion": "通过" if passed else "不通过",
+            "key_finding": key_finding,
+            "missing_reference_terms": missing_reference_terms,
+            "glossary_found": glossary_found,
+            "entries_found": entries_found,
+            "term_count": len(seed_data["entries"]),
+        }
+
+    def _build_summary_section(self, conclusion: Dict[str, Any], seed_data: Dict[str, Any]) -> str:
+        return "\n".join(
+            [
+                "## 审计综述",
+                "",
+                "| 项目 | 详情 |",
+                "| --- | --- |",
+                f'| 术语/缩略语章节 | {"存在" if conclusion["glossary_found"] else "缺失"} |',
+                f'| 识别术语数量 | {conclusion["term_count"]} |',
+                f'| 审计结果 | **{conclusion["audit_result"]}** |',
+                f'| 检查项最终结论 | **{conclusion["finding_conclusion"]}** |',
+                f'| 关键发现 | {conclusion["key_finding"]} |',
+                f'| 术语章节范围 | line {seed_data["start_line"]} 到 line {seed_data["end_line"]} |',
+            ]
+        )
+
+    def _build_final_conclusion_section(self, conclusion: Dict[str, Any]) -> str:
+        section_lines = [
+            "## 检查项最终结论",
+            "",
+            f'**{conclusion["finding_conclusion"]}**',
+            "",
+            f'判定依据：{conclusion["key_finding"]}',
+        ]
+        if conclusion["missing_reference_terms"]:
+            section_lines.append(
+                f'未被正文引用的术语/缩略语：{", ".join(conclusion["missing_reference_terms"])}'
+            )
+        return "\n".join(section_lines)
+
+    def _merge_report_with_conclusion(
+        self,
+        report_text: str,
+        seed_data: Dict[str, Any],
+        conclusion: Dict[str, Any],
+    ) -> str:
+        content = report_text.strip()
+        prefix = ""
+        if content.startswith("Final Answer:"):
+            prefix = "Final Answer:\n"
+            content = content[len("Final Answer:"):].lstrip()
+
+        summary_section = self._build_summary_section(conclusion, seed_data)
+        final_conclusion_section = self._build_final_conclusion_section(conclusion)
+
+        lines = content.splitlines()
+        if lines and lines[0].startswith("# "):
+            merged_lines = [lines[0], "", summary_section]
+            if len(lines) > 1:
+                merged_lines.extend(["", *lines[1:]])
+            merged_lines.extend(["", final_conclusion_section])
+            return prefix + "\n".join(merged_lines)
+
+        sections = [summary_section]
+        if content:
+            sections.extend([content, final_conclusion_section])
+        else:
+            sections.append(final_conclusion_section)
+        return prefix + "\n\n".join(sections)
+
     def _build_supplemental_section(self, report_text: str, seed_data: Dict[str, Any], retrieval_rows: List[Dict[str, Any]]) -> str:
         missing_entries = []
         lower_report = report_text.lower()
@@ -691,6 +777,7 @@ class DocTermAgent(BaseAgent):
         seed_context = self._build_seed_context(seed_data)
         retrieval_rows = self._build_retrieval_audit(seed_data)
         retrieval_context = self._build_retrieval_context(retrieval_rows)
+        conclusion = self._evaluate_audit_result(seed_data, retrieval_rows)
         queue.put({
             "type": "step",
             "agent": "术语提取员",
@@ -740,5 +827,14 @@ class DocTermAgent(BaseAgent):
         result = crew.kickoff()
         if isinstance(result, str):
             supplemented_result = self._build_supplemental_section(result, seed_data, retrieval_rows)
-            return self._append_retrieval_appendix(supplemented_result, retrieval_rows)
+            merged_result = self._merge_report_with_conclusion(supplemented_result, seed_data, conclusion)
+            final_result = self._append_retrieval_appendix(merged_result, retrieval_rows)
+            queue.put({
+                "type": "step",
+                "agent": "报告生成员",
+                "phase_id": "phase_5",
+                "content": f'检查项最终结论：{conclusion["finding_conclusion"]}',
+                "thought": conclusion["key_finding"],
+            })
+            return final_result
         return result
