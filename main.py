@@ -64,11 +64,14 @@ async def vite_client():
     return Response(content="", media_type="application/javascript")
 
 if __name__ == "__main__":
+    host = os.getenv("APP_HOST", "0.0.0.0")
+    port = int(os.getenv("APP_PORT", os.getenv("PORT", "5000")))
+    reload_enabled = os.getenv("APP_RELOAD", "true").lower() == "true"
     uvicorn.run(
         "main:app", 
-        host="0.0.0.0", 
-        port=5000, 
-        reload=True,
+        host=host, 
+        port=port, 
+        reload=reload_enabled,
         reload_excludes=[
             "outputs", 
             "uploads", 

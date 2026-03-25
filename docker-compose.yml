@@ -1,0 +1,24 @@
+services:
+  sh-agent:
+    build: .
+    image: sh-agent:latest
+    container_name: sh-agent
+    ports:
+      - "5050:5050"
+    environment:
+      - APP_HOST=0.0.0.0
+      - APP_PORT=5050
+      - APP_RELOAD=false
+      - ALIYUN_API_KEY=${ALIYUN_API_KEY:-}
+      - ALIYUN_API_BASE=${ALIYUN_API_BASE:-}
+      - MODEL_NAME=${MODEL_NAME:-qwen-max}
+    volumes:
+      - ./uploads:/app/uploads
+      - ./outputs:/app/outputs
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+    restart: always
+
+networks:
+  default:
+    name: sh-agent-network
