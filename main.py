@@ -6,6 +6,9 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from app.api.routes import router
 import os
 import uvicorn
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI(title="适航智能体平台", version="1.0.0", docs_url=None, redoc_url=None)
 
