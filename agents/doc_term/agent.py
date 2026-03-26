@@ -36,6 +36,30 @@ class DocTermAgent(BaseAgent):
     def description(self) -> str:
         return "检查文档中是否包含术语/缩略语章节，并核实其定义与正文使用的一致性。"
 
+    @property
+    def phase_definitions(self) -> List[Dict[str, str]]:
+        return [
+            {"id": "phase_1", "label": "文档处理"},
+            {"id": "phase_2", "label": "术语提取"},
+            {"id": "phase_3", "label": "术语审计"},
+            {"id": "phase_4", "label": "零引用复核"},
+            {"id": "phase_5", "label": "报告生成"},
+        ]
+
+    @property
+    def phase_task_requirements(self) -> Dict[str, int]:
+        return {
+            "phase_1": 1,
+            "phase_2": 3,
+            "phase_3": 1,
+            "phase_4": 1,
+            "phase_5": 1,
+        }
+
+    @property
+    def role_phase_map(self) -> Dict[str, str]:
+        return self.PHASE_MAP.copy()
+
     def _ensure_not_stopped(self, stop_event: Event) -> None:
         if stop_event.is_set():
             raise RuntimeError("Audit stopped by user.")

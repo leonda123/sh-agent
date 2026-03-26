@@ -104,6 +104,9 @@ class AgentManager:
                 "min_file_count": agent.min_file_count,
                 "max_file_count": agent.max_file_count,
                 "accepts_multiple_files": agent.accepts_multiple_files,
+                "phase_definitions": agent.phase_definitions,
+                "phase_task_requirements": agent.phase_task_requirements,
+                "role_phase_map": agent.role_phase_map,
             }
             for agent in self._agents.values()
         ]

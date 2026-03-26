@@ -4,7 +4,7 @@ from agents.doc_audit.tasks import FigureTableTasks
 from app.core.base_agent import BaseAgent
 from app.core.llm import LLMFactory
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List
 from queue import Queue
 from threading import Event
 from dotenv import load_dotenv
@@ -23,6 +23,36 @@ class DocAuditAgent(BaseAgent):
     @property
     def description(self) -> str:
         return "自动检查文档中的图表目录与正文内容是否一致。"
+
+    @property
+    def phase_definitions(self) -> List[Dict[str, str]]:
+        return [
+            {"id": "phase_1", "label": "文档处理"},
+            {"id": "phase_2", "label": "内容提取"},
+            {"id": "phase_3", "label": "交叉验证"},
+            {"id": "phase_4", "label": "一致性审计"},
+            {"id": "phase_5", "label": "报告生成"},
+        ]
+
+    @property
+    def phase_task_requirements(self) -> Dict[str, int]:
+        return {
+            "phase_1": 1,
+            "phase_2": 2,
+            "phase_3": 1,
+            "phase_4": 1,
+            "phase_5": 1,
+        }
+
+    @property
+    def role_phase_map(self) -> Dict[str, str]:
+        return {
+            '文档处理专家': 'phase_1',
+            '内容分析师': 'phase_2',
+            '交叉验证员': 'phase_3',
+            '审计员': 'phase_4',
+            '审查员': 'phase_5'
+        }
 
     def run(self, inputs: Dict[str, Any], queue: Queue, stop_event: Event) -> Any:
         pdf_path = self.get_primary_input_file(inputs).get("path")

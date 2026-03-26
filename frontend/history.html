@@ -64,6 +64,66 @@
             padding: 10px;
         }
 
+        .history-filters {
+            padding: 14px;
+            border-bottom: 1px solid #dbe3ea;
+            background: linear-gradient(180deg, #f8fbff 0%, #f4f7fb 100%);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: inset 0 -1px 0 rgba(0,0,0,0.02);
+        }
+
+        .filter-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .filter-title {
+            font-size: 13px;
+            color: #2c3e50;
+            font-weight: 700;
+        }
+
+        .filter-count {
+            font-size: 12px;
+            color: #1d6fa5;
+            background: #e8f4ff;
+            border: 1px solid #c8e3fb;
+            border-radius: 999px;
+            padding: 2px 8px;
+        }
+
+        .filter-label {
+            font-size: 12px;
+            color: #666;
+            font-weight: 600;
+        }
+
+        .filter-select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #b8d3ea;
+            border-radius: 6px;
+            background: #fff;
+            font-size: 13px;
+            color: #333;
+            box-sizing: border-box;
+            outline: none;
+        }
+
+        .filter-select:focus {
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
+        }
+
+        .filter-hint {
+            font-size: 12px;
+            color: #6c7a89;
+        }
+
         .history-item {
             padding: 15px;
             border-bottom: 1px solid #eee;
@@ -89,6 +149,7 @@
             word-break: break-all;
             display: -webkit-box;
             -webkit-line-clamp: 2;
+            line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
@@ -282,6 +343,17 @@
             <h2>历史记录</h2>
             <a href="/" class="back-btn">返回主页</a>
         </div>
+        <div class="history-filters">
+            <div class="filter-header">
+                <span class="filter-title">筛选条件</span>
+                <span class="filter-count" id="agentFilterCount">0 个智能体</span>
+            </div>
+            <label class="filter-label" for="agentFilter">按智能体筛选</label>
+            <select id="agentFilter" class="filter-select">
+                <option value="">全部智能体</option>
+            </select>
+            <div class="filter-hint" id="filterHint">显示全部历史记录</div>
+        </div>
         <div class="history-list" id="historyList">
             <div class="loading">加载中...</div>
         </div>
@@ -302,9 +374,23 @@
     </div>
 
     <script>
+        let allHistorySessions = [];
+        let agentMetadataMap = {};
+        let selectedAgentFilter = '';
+        let activeSessionId = null;
+
         document.addEventListener('DOMContentLoaded', () => {
-            loadHistoryList();
+            document.getElementById('agentFilter').addEventListener('change', (event) => {
+                selectedAgentFilter = event.target.value;
+                renderHistoryList();
+            });
+            initializeHistoryPage();
         });
+
+        async function initializeHistoryPage() {
+            await loadAgentMetadata();
+            await loadHistoryList();
+        }
 
         function formatDate(timestamp) {
             if (!timestamp) return '未知时间';
@@ -326,45 +412,156 @@
             return `<span class="status-badge ${s.class}">${s.text}</span>`;
         }
 
+        function getAgentDisplayName(agentId) {
+            if (!agentId) return '未知';
+            return agentMetadataMap[agentId]?.name || agentId;
+        }
+
+        async function loadAgentMetadata() {
+            try {
+                const response = await fetch('/api/agents');
+                if (!response.ok) throw new Error('Failed to load agents');
+                const agents = await response.json();
+                agentMetadataMap = agents.reduce((acc, agent) => {
+                    if (agent?.id) {
+                        acc[agent.id] = agent;
+                    }
+                    return acc;
+                }, {});
+            } catch (error) {
+                console.error('加载智能体元数据失败:', error);
+                agentMetadataMap = {};
+            }
+        }
+
+        function renderAgentFilterOptions(sessions) {
+            const agentFilter = document.getElementById('agentFilter');
+            const agentFilterCount = document.getElementById('agentFilterCount');
+            const currentValue = selectedAgentFilter;
+            const optionMap = new Map();
+
+            Object.values(agentMetadataMap).forEach(agent => {
+                optionMap.set(agent.id, getAgentDisplayName(agent.id));
+            });
+
+            sessions.forEach(session => {
+                if (session?.agent_id && !optionMap.has(session.agent_id)) {
+                    optionMap.set(session.agent_id, session.agent_id);
+                }
+            });
+
+            const sortedOptions = Array.from(optionMap.entries()).sort((a, b) => {
+                return a[1].localeCompare(b[1], 'zh-CN');
+            });
+
+            agentFilter.innerHTML = '<option value="">全部智能体</option>';
+            sortedOptions.forEach(([agentId, displayName]) => {
+                const option = document.createElement('option');
+                option.value = agentId;
+                option.textContent = displayName === agentId ? displayName : `${displayName} (${agentId})`;
+                agentFilter.appendChild(option);
+            });
+
+            agentFilter.value = sortedOptions.some(([agentId]) => agentId === currentValue) ? currentValue : '';
+            selectedAgentFilter = agentFilter.value;
+            agentFilterCount.textContent = `${sortedOptions.length} 个智能体`;
+        }
+
+        function getFilteredSessions() {
+            if (!selectedAgentFilter) {
+                return allHistorySessions;
+            }
+            return allHistorySessions.filter(session => session.agent_id === selectedAgentFilter);
+        }
+
+        function updateFilterHint(filteredCount, totalCount) {
+            const filterHint = document.getElementById('filterHint');
+            if (!selectedAgentFilter) {
+                filterHint.textContent = totalCount > 0 ? `显示全部历史记录，共 ${totalCount} 条` : '显示全部历史记录';
+                return;
+            }
+            filterHint.textContent = `当前筛选：${getAgentDisplayName(selectedAgentFilter)}，共 ${filteredCount} / ${totalCount} 条`;
+        }
+
+        function renderHistoryList() {
+            const listEl = document.getElementById('historyList');
+            const mainContent = document.getElementById('mainContent');
+            const filteredSessions = getFilteredSessions();
+            updateFilterHint(filteredSessions.length, allHistorySessions.length);
+
+            if (activeSessionId && !filteredSessions.some(session => session.session_id === activeSessionId)) {
+                activeSessionId = null;
+                mainContent.innerHTML = `
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" width="64" height="64" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                        当前筛选条件下未选中任何记录
+                    </div>
+                `;
+            }
+
+            if (filteredSessions.length === 0) {
+                listEl.innerHTML = '<div class="loading">当前筛选条件下暂无历史记录</div>';
+                return;
+            }
+
+            listEl.innerHTML = '';
+            filteredSessions.forEach(session => {
+                const item = document.createElement('div');
+                item.className = 'history-item';
+                item.dataset.id = session.session_id;
+                if (session.session_id === activeSessionId) {
+                    item.classList.add('active');
+                }
+
+                const fileName = session.file_name || (session.file_names && session.file_names.length > 0 ? session.file_names.join(', ') : '未知文件');
+                const agentId = session.agent_id || '未知';
+                const agentDisplay = getAgentDisplayName(session.agent_id);
+
+                item.innerHTML = `
+                    <div class="history-title" title="${fileName}">${fileName}</div>
+                    <div class="history-meta">
+                        <span>${formatDate(session.start_time)}</span>
+                        ${getStatusBadge(session.status)}
+                    </div>
+                    <div style="font-size: 11px; color: #999; margin-top: 5px;">
+                        智能体：${agentDisplay}${agentDisplay === agentId ? '' : ` (${agentId})`}
+                    </div>
+                `;
+
+                item.addEventListener('click', () => {
+                    activeSessionId = session.session_id;
+                    document.querySelectorAll('.history-item').forEach(el => el.classList.remove('active'));
+                    item.classList.add('active');
+                    loadSessionDetails(session.session_id);
+                });
+
+                listEl.appendChild(item);
+            });
+        }
+
         async function loadHistoryList() {
             const listEl = document.getElementById('historyList');
             try {
                 const response = await fetch('/api/history');
                 if (!response.ok) throw new Error('Failed to load history');
                 const sessions = await response.json();
-                
-                if (sessions.length === 0) {
+                allHistorySessions = Array.isArray(sessions) ? sessions : [];
+
+                if (allHistorySessions.length === 0) {
+                    renderAgentFilterOptions([]);
                     listEl.innerHTML = '<div class="loading">暂无历史记录</div>';
+                    updateFilterHint(0, 0);
                     return;
                 }
 
-                listEl.innerHTML = '';
-                sessions.forEach(session => {
-                    const item = document.createElement('div');
-                    item.className = 'history-item';
-                    item.dataset.id = session.session_id;
-                    
-                    const fileName = session.file_name || (session.file_names && session.file_names.length > 0 ? session.file_names.join(', ') : '未知文件');
-                    
-                    item.innerHTML = `
-                        <div class="history-title" title="${fileName}">${fileName}</div>
-                        <div class="history-meta">
-                            <span>${formatDate(session.start_time)}</span>
-                            ${getStatusBadge(session.status)}
-                        </div>
-                        <div style="font-size: 11px; color: #999; margin-top: 5px;">
-                            Agent: ${session.agent_id || '未知'}
-                        </div>
-                    `;
-                    
-                    item.addEventListener('click', () => {
-                        document.querySelectorAll('.history-item').forEach(el => el.classList.remove('active'));
-                        item.classList.add('active');
-                        loadSessionDetails(session.session_id);
-                    });
-                    
-                    listEl.appendChild(item);
-                });
+                renderAgentFilterOptions(allHistorySessions);
+                renderHistoryList();
             } catch (error) {
                 listEl.innerHTML = `<div class="loading" style="color:red;">加载失败: ${error.message}</div>`;
             }
@@ -453,7 +650,7 @@
                     <h2>${fileName}</h2>
                     <div class="content-meta">
                         <span><strong>状态:</strong> ${getStatusBadge(session.status)}</span>
-                        <span><strong>Agent:</strong> ${session.agent_id || '未知'}</span>
+                        <span><strong>智能体:</strong> ${getAgentDisplayName(session.agent_id)}${session.agent_id ? ` (${session.agent_id})` : ''}</span>
                         <span><strong>时间:</strong> ${timeStr}</span>
                     </div>
                 </div>

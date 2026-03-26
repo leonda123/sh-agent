@@ -48,6 +48,25 @@ class BaseAgent(ABC):
     def accepts_multiple_files(self) -> bool:
         return self.max_file_count is None or self.max_file_count > 1
 
+    @property
+    def phase_definitions(self) -> List[Dict[str, str]]:
+        return [
+            {"id": "phase_1", "label": "阶段一"},
+            {"id": "phase_2", "label": "阶段二"},
+            {"id": "phase_3", "label": "阶段三"},
+        ]
+
+    @property
+    def phase_task_requirements(self) -> Dict[str, int]:
+        return {
+            phase["id"]: 1
+            for phase in self.phase_definitions
+        }
+
+    @property
+    def role_phase_map(self) -> Dict[str, str]:
+        return {}
+
     def get_input_files(self, inputs: Dict[str, Any]) -> List[Dict[str, Any]]:
         files = inputs.get("files")
         if files:
