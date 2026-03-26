@@ -24,6 +24,7 @@ MANIFEST
 .trae/
 MultiAgent_Research_Report.md
 agent_creation_guide.md
+NEW_AGENT_BUILDER_PROMPT_TEMPLATE.md
 
 # Virtual Environment
 venv/
