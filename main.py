@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="适航智能体平台", version="1.0.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="SH智能体平台", version="1.0.0", docs_url=None, redoc_url=None)
 
 app.add_middleware(
     CORSMiddleware,
