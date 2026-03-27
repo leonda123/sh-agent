@@ -1,6 +1,6 @@
 from crewai import Crew, Process, LLM
-from agents.doc_audit.roles import FigureTableRoles
-from agents.doc_audit.tasks import FigureTableTasks
+from .roles import FigureTableRoles
+from .tasks import FigureTableTasks
 from app.core.base_agent import BaseAgent
 from app.core.llm import LLMFactory
 import os
@@ -23,6 +23,27 @@ class DocAuditAgent(BaseAgent):
     @property
     def description(self) -> str:
         return "自动检查文档中的图表目录与正文内容是否一致。"
+
+    @property
+    def category_folder(self) -> str:
+        return "4_hgsdjh"
+
+    @property
+    def category_name(self) -> str:
+        return "软件合格审定计划"
+
+    @property
+    def checklist_items(self) -> List[Dict[str, str]]:
+        return [
+            {
+                "item_no": "6",
+                "content": "文档是否有图清单和/或表清单？",
+            },
+            {
+                "item_no": "7",
+                "content": "图清单和/或表清单中是否包含了所有正文中对应的图表名称，并且内容一致？",
+            },
+        ]
 
     @property
     def phase_definitions(self) -> List[Dict[str, str]]:

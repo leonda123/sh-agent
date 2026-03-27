@@ -7,8 +7,8 @@ from typing import Any, Dict, List
 from crewai import Crew, Process
 from dotenv import load_dotenv
 
-from agents.doc_term.roles import TermAuditRoles
-from agents.doc_term.tasks import TermAuditTasks
+from .roles import TermAuditRoles
+from .tasks import TermAuditTasks
 from app.core.base_agent import BaseAgent
 from app.core.llm import LLMFactory
 from app.tools.document_tools import ProcessDocumentTool
@@ -35,6 +35,27 @@ class DocTermAgent(BaseAgent):
     @property
     def description(self) -> str:
         return "检查文档中是否包含术语/缩略语章节，并核实其定义与正文使用的一致性。"
+
+    @property
+    def category_folder(self) -> str:
+        return "4_hgsdjh"
+
+    @property
+    def category_name(self) -> str:
+        return "软件合格审定计划"
+
+    @property
+    def checklist_items(self) -> List[Dict[str, str]]:
+        return [
+            {
+                "item_no": "8",
+                "content": "文档是否有术语和缩略语章节？",
+            },
+            {
+                "item_no": "9",
+                "content": "术语和缩略语是否定义正确，且其中包含的所有术语和缩略语在正文中都有出现？",
+            },
+        ]
 
     @property
     def phase_definitions(self) -> List[Dict[str, str]]:

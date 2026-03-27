@@ -67,6 +67,18 @@ class BaseAgent(ABC):
     def role_phase_map(self) -> Dict[str, str]:
         return {}
 
+    @property
+    def category_folder(self) -> str:
+        return ""
+
+    @property
+    def category_name(self) -> str:
+        return ""
+
+    @property
+    def checklist_items(self) -> List[Dict[str, str]]:
+        return []
+
     def get_input_files(self, inputs: Dict[str, Any]) -> List[Dict[str, Any]]:
         files = inputs.get("files")
         if files:

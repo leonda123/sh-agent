@@ -1,5 +1,5 @@
 import sys
-sys.path.insert(0, 'd:\\47065\\code_ljf\\sh-agent')
+sys.path.insert(0, 'd:\\work\\sh-agent')
 
 from app.core.agent_manager import AgentManager
 
@@ -11,9 +11,15 @@ for a in agents:
     if a["id"] == "doc_toc_structure_check":
         print(f'=== {a["id"]}: {a["name"]} ===')
         print(f'描述: {a["description"]}')
+        print(f'分类目录: {a["category_folder"]}')
+        print(f'分类名称: {a["category_name"]}')
         print(f'最少文件数: {a["min_file_count"]}')
         print(f'最多文件数: {a["max_file_count"]}')
         print(f'支持多文件: {a["accepts_multiple_files"]}')
+        print()
+        print('检查项:')
+        for item in a["checklist_items"]:
+            print(f'  - {item["item_no"]}. {item["content"]}')
         print()
         print('阶段定义:')
         for phase in a["phase_definitions"]:

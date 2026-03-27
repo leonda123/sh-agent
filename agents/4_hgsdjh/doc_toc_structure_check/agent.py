@@ -1,6 +1,6 @@
 from crewai import Crew, Process
-from agents.doc_toc_structure_check.roles import TOCStructureRoles
-from agents.doc_toc_structure_check.tasks import TOCStructureTasks
+from .roles import TOCStructureRoles
+from .tasks import TOCStructureTasks
 from app.core.base_agent import BaseAgent
 from app.core.llm import LLMFactory
 from typing import Dict, Any, List
@@ -24,6 +24,27 @@ class TOCStructureCheckAgent(BaseAgent):
     @property
     def description(self) -> str:
         return "检查文档目次是否与正文目录结构一致，采用A轮、B轮交叉验证机制确保结果准确。"
+
+    @property
+    def category_folder(self) -> str:
+        return "4_hgsdjh"
+
+    @property
+    def category_name(self) -> str:
+        return "软件合格审定计划"
+
+    @property
+    def checklist_items(self) -> List[Dict[str, str]]:
+        return [
+            {
+                "item_no": "4",
+                "content": "文档是否有目次？",
+            },
+            {
+                "item_no": "5",
+                "content": "目次是否与正文中目录结构一致？",
+            },
+        ]
 
     @property
     def min_file_count(self) -> int:

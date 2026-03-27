@@ -6,8 +6,8 @@ from queue import Queue
 from threading import Event
 from typing import Any, Dict, List, Optional
 
-from agents.doc_first_page.roles import FirstPageAuditRoles
-from agents.doc_first_page.tasks import FirstPageAuditTasks
+from .roles import FirstPageAuditRoles
+from .tasks import FirstPageAuditTasks
 from app.core.base_agent import BaseAgent
 from app.tools.document_tools import ProcessDocumentTool
 
@@ -94,6 +94,23 @@ class DocFirstPageAgent(BaseAgent):
     @property
     def description(self) -> str:
         return "检查首页是否包含文件名称、文件编号、版本、文件发布日期与版权声明。"
+
+    @property
+    def category_folder(self) -> str:
+        return "4_hgsdjh"
+
+    @property
+    def category_name(self) -> str:
+        return "软件合格审定计划"
+
+    @property
+    def checklist_items(self) -> List[Dict[str, str]]:
+        return [
+            {
+                "item_no": "1",
+                "content": "首页是否包含了文件名称、文件编号、版本、文件发布日期以及版权声明？",
+            }
+        ]
 
     @property
     def phase_definitions(self) -> List[Dict[str, str]]:

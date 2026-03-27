@@ -1,6 +1,6 @@
 from crewai import Crew, Process
-from agents.doc_history_check.roles import DocHistoryRoles
-from agents.doc_history_check.tasks import DocHistoryTasks
+from .roles import DocHistoryRoles
+from .tasks import DocHistoryTasks
 from app.core.base_agent import BaseAgent
 from app.core.llm import LLMFactory
 import os
@@ -20,6 +20,27 @@ class DocHistoryCheckAgent(BaseAgent):
     @property
     def description(self) -> str:
         return "文档版本记录是否正确列出历史版本及其作者，是否正确列出历史版本的变更单据信息？"
+
+    @property
+    def category_folder(self) -> str:
+        return "4_hgsdjh"
+
+    @property
+    def category_name(self) -> str:
+        return "软件合格审定计划"
+
+    @property
+    def checklist_items(self) -> List[Dict[str, str]]:
+        return [
+            {
+                "item_no": "2",
+                "content": "文档版本记录是否正确列出历史版本及其作者？",
+            },
+            {
+                "item_no": "3",
+                "content": "是否正确列出历史版本的变更单据信息？",
+            },
+        ]
 
     @property
     def min_file_count(self) -> int:

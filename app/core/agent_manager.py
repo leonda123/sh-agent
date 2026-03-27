@@ -22,7 +22,11 @@ class AgentManager:
         """
         动态加载 'agents' 目录下的所有智能体。
         """
-        agents_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "agents")
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        agents_dir = os.path.join(project_root, "agents")
+
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
         
         if not os.path.exists(agents_dir):
             print(f"Warning: Agents directory not found at {agents_dir}")
@@ -30,22 +34,12 @@ class AgentManager:
 
         print(f"Scanning for agents in {agents_dir}...")
         
-        # 遍历 agents/ 目录下的所有子目录
-        for item in os.listdir(agents_dir):
-            item_path = os.path.join(agents_dir, item)
-            
-            # 跳过非目录和隐藏文件
-            if not os.path.isdir(item_path) or item.startswith("__") or item.startswith("."):
-                continue
-                
-            # 在子目录中查找 agent.py 文件
-            agent_file = os.path.join(item_path, "agent.py")
-            if not os.path.exists(agent_file):
-                continue
-                
+        for agent_file in self._iter_agent_files(agents_dir):
+            relative_path = os.path.relpath(agent_file, agents_dir)
+            module_path = os.path.splitext(relative_path)[0].replace(os.sep, ".")
+            module_name = f"agents.{module_path}"
+
             try:
-                # 动态导入模块
-                module_name = f"agents.{item}.agent"
                 spec = importlib.util.spec_from_file_location(module_name, agent_file)
                 if spec and spec.loader:
                     module = importlib.util.module_from_spec(spec)
@@ -69,13 +63,25 @@ class AgentManager:
                                 # 每个文件只注册一个智能体，避免重复
                                 break 
                             except Exception as e:
-                                print(f"Failed to instantiate agent {attr_name} in {item}: {e}")
+                                print(f"Failed to instantiate agent {attr_name} in {relative_path}: {e}")
                     
                     if not found_agent:
                         print(f"No BaseAgent subclass found in {agent_file}")
                         
             except Exception as e:
-                print(f"Failed to load agent module {item}: {e}")
+                print(f"Failed to load agent module {relative_path}: {e}")
+
+    def _iter_agent_files(self, agents_dir: str) -> List[str]:
+        agent_files: List[str] = []
+        for root, dir_names, file_names in os.walk(agents_dir):
+            dir_names[:] = [
+                directory
+                for directory in dir_names
+                if not directory.startswith("__") and not directory.startswith(".")
+            ]
+            if "agent.py" in file_names:
+                agent_files.append(os.path.join(root, "agent.py"))
+        return sorted(agent_files)
 
     def register_agent(self, agent: BaseAgent):
         """
@@ -101,6 +107,9 @@ class AgentManager:
                 "id": agent.name,
                 "name": agent.display_name,
                 "description": agent.description,
+                "category_folder": agent.category_folder,
+                "category_name": agent.category_name,
+                "checklist_items": agent.checklist_items,
                 "min_file_count": agent.min_file_count,
                 "max_file_count": agent.max_file_count,
                 "accepts_multiple_files": agent.accepts_multiple_files,
