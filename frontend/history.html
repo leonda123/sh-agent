@@ -640,7 +640,36 @@
             // Build Result HTML
             let resultHtml = '';
             if (session.result) {
-                resultHtml = marked.parse(session.result);
+                // 如果后端存入的是一个序列化成字符串的 JSON 字典（例如包含了 conclusion 和 markdown_report）
+                // 我们需要尝试解析它，并提取 markdown_report
+                let markdownContent = session.result;
+                try {
+                    // 如果已经是对象，说明在某些地方已经被解析过了
+                    if (typeof session.result === 'object') {
+                        markdownContent = session.result.markdown_report || session.result.result || JSON.stringify(session.result, null, 2);
+                    } else if (typeof session.result === 'string') {
+                        // 尝试解析字符串看是否为 JSON
+                        // 如果字符串以 '{' 开头，可能是 JSON 字典字符串
+                        if (session.result.trim().startsWith('{')) {
+                            // 由于 Python 生成的字符串可能是 {'key': 'value'} 而不是合法的 JSON {"key": "value"}
+                            // 这里做一个非常粗略的容错处理：替换单引号为双引号（如果没转义的话）
+                            let safeJsonStr = session.result.replace(/'/g, '"');
+                            const parsedResult = JSON.parse(safeJsonStr);
+                            markdownContent = parsedResult.markdown_report || parsedResult.result || session.result;
+                        }
+                    }
+                } catch (e) {
+                    console.warn("解析 result 失败，使用原始字符串", e);
+                    // 也有可能是单引号导致的 parse 失败，如果是这样，我们可以尝试用正则强行提取 markdown_report
+                    if (session.result && typeof session.result === 'string' && session.result.includes('markdown_report')) {
+                        const match = session.result.match(/'markdown_report':\s*['"](#[\s\S]*?)['"]\s*}/);
+                        if (match && match[1]) {
+                            markdownContent = match[1].replace(/\\n/g, '\n');
+                        }
+                    }
+                }
+                
+                resultHtml = marked.parse(markdownContent);
             } else {
                 resultHtml = '<div style="color:#888;">暂无最终结果</div>';
             }
