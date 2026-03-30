@@ -23,7 +23,7 @@ class DocHistoryCheckAgent(BaseAgent):
 
     @property
     def category_folder(self) -> str:
-        return "4_hgsdjh"
+        return "4_PSAC"
 
     @property
     def category_name(self) -> str:
